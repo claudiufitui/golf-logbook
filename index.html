@@ -315,16 +315,24 @@ async function connect(){
 }
 async function openLink(){
   chip('chipBt','Connecting…','warn');
-  const server=await device.gatt.connect();
+  log('Connecting to '+(device.name||'device')+'…');
+  const withTimeout=(p,ms,what)=>Promise.race([p,new Promise((_,rej)=>setTimeout(()=>rej(new Error(what+' took too long.')),ms))]);
+  let server;
+  try{server=await withTimeout(device.gatt.connect(),12000,'Connecting');}
+  catch(e){try{device.gatt.disconnect();}catch(_){}
+    chip('chipBt','No link','bad');
+    btProblem('<b>The adapter didn’t answer.</b> Another app is probably still holding it. Force-stop Car Scanner (Settings → Apps → Car Scanner → Force stop), turn phone Bluetooth off and on, then tap Connect again.');
+    log('gatt.connect failed: '+e.message);wantConnected=false;return;}
+  log('Linked. Looking for the serial channel…');
   rxChar=txChar=null;
-  let services=[];try{services=await server.getPrimaryServices();}catch(e){log('Service list failed: '+e.message);}
+  let services=[];try{services=await withTimeout(server.getPrimaryServices(),10000,'Listing services');log('Services: '+services.map(x=>x.uuid.slice(4,8)).join(' '));}catch(e){log('Service list failed: '+e.message);}
   for(const s of services){
     let chars=[];try{chars=await s.getCharacteristics();}catch(e){continue;}
     let rx=null,tx=null;
     for(const c of chars){const p=c.properties;if(!rx&&(p.notify||p.indicate))rx=c;if(!tx&&(p.write||p.writeWithoutResponse))tx=c;}
     if(rx&&tx){rxChar=rx;txChar=tx;log('Serial channel on service '+s.uuid);break;}
   }
-  if(!rxChar)throw new Error('No serial channel found on this device.');
+  if(!rxChar){chip('chipBt','Unknown device','bad');btProblem('<b>This device has no serial channel the app knows.</b> Make sure you picked the OBD adapter in the list, not another Bluetooth device. Then send Claude the adapter log from the Car tab.');try{device.gatt.disconnect();}catch(_){}wantConnected=false;return;}
   await rxChar.startNotifications();
   rxChar.addEventListener('characteristicvaluechanged',e=>{rxBuf+=new TextDecoder().decode(e.target.value);if(rxBuf.includes('>'))flush();});
   connected=true;btProblem('');chip('chipBt',device.name||'Adapter','ok');$('btnConnect').textContent='Disconnect';
