@@ -111,7 +111,7 @@ input[type=number]{background:var(--panel2);border:1px solid var(--line);color:v
 <body>
 <div class="app">
   <div class="top">
-    <div class="brand">Golf Logbook<small>1.9 TDI BLS</small></div>
+    <div class="brand">Golf Logbook<small>1.9 TDI BLS · v13</small></div>
     <div class="chips">
       <span class="chip" id="chipBt">Adapter off</span>
       <span class="chip" id="chipGps">GPS off</span>
@@ -813,7 +813,9 @@ document.addEventListener('fullscreenchange',()=>{if(!document.fullscreenElement
 document.addEventListener('visibilitychange',()=>{if((connected||rec)&&document.visibilityState==='visible')keepAwake();});
 window.addEventListener('pagehide',()=>{if(rec&&!rec.demo)flushChunk(rec);});
 openDb().then(async()=>{await reviveTrips();renderTrips();autoConnect();syncPending();});
-if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
+if('serviceWorker' in navigator){navigator.serviceWorker.register('sw.js',{updateViaCache:'none'}).then(r=>r.update()).catch(()=>{});
+  // When a new version takes over, reload once so you're never stuck on an old one.
+  let reloaded=false;navigator.serviceWorker.addEventListener('controllerchange',()=>{if(!reloaded&&!rec&&!connected){reloaded=true;location.reload();}});}
 updateCockpit(performance.now());
 })();
 </script>
