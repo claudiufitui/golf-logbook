@@ -112,7 +112,7 @@ input[type=number]{background:var(--panel2);border:1px solid var(--line);color:v
 <body>
 <div class="app">
   <div class="top">
-    <div class="brand">Golf Logbook<small>1.9 TDI BLS · v14</small></div>
+    <div class="brand">Golf Logbook<small>1.9 TDI BLS · v15</small></div>
     <div class="chips">
       <span class="chip" id="chipBt">Adapter off</span>
       <span class="chip" id="chipGps">GPS off</span>
@@ -634,7 +634,7 @@ async function readDtc(){
 }
 
 // =============== derived values ===============
-let lastSpeed=null,lastSpeedT=null,accG=0;
+const spdHist=[];let spdT0=null;
 function derive(now){
   if(live.baro!=null)baroBase=live.baro;
   else{ if(live.map!=null&&live.rpm!=null&&live.rpm<50)mapAtRest=live.map;
@@ -649,7 +649,9 @@ function derive(now){
     const kw=live.lph*DIESEL_DENS/3600*LHV*1000*EFF;   // L/h → kg/s × MJ/kg → kW
     live.hp=kw*1.341;
   }
-  if(live.speed!=null){if(lastSpeed!=null){const dt=(now-lastSpeedT)/1000;if(dt>0.05&&dt<3){const a=(live.speed-lastSpeed)/3.6/dt/9.81;accG=accG*0.7+a*0.3;}}lastSpeed=live.speed;lastSpeedT=now;live.accg=accG;}
+  // Acceleration over a 1.5 s window: speed comes in whole km/h, so short windows turn rounding into fake g-forces.
+  if(live.speed!=null&&fresh.speed===spdT0){}else if(live.speed!=null){spdHist.push([now,live.speed]);spdT0=fresh.speed;while(spdHist.length>2&&now-spdHist[1][0]>1500)spdHist.shift();
+    const [t0,v0]=spdHist[0];const dt=(now-t0)/1000;if(dt>=1)live.accg=(live.speed-v0)/3.6/dt/9.81;}
 }
 
 // =============== trips ===============
