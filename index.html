@@ -354,8 +354,12 @@ function onRx(e){rxBuf+=rxDec.decode(e.target.value);if(rxBuf.includes('>'))flus
 async function openLink(){
   if(linking){log('Already connecting, skipped a second attempt');return;}
   linking=true;
-  try{await openLinkInner();}finally{linking=false;}
+  try{
+    await openLinkInner();
+    if(!connected&&device&&!gaveUp){log('Starting the Bluetooth link from scratch…');try{device.gatt.disconnect();}catch(_){}await new Promise(r=>setTimeout(r,2500));await openLinkInner();}
+  }finally{linking=false;gaveUp=false;}
 }
+let gaveUp=false;
 async function openLinkInner(){
   chip('chipBt','Connecting…','warn');
   log('Connecting to '+(device.name||'device')+'…');
@@ -369,7 +373,7 @@ async function openLinkInner(){
   if(!server){const e=lastErr||new Error('no link');
     chip('chipBt','No link','bad');
     if(!autoMode)btProblem('<b>The adapter didn’t answer.</b> Another app is probably still holding it. Force-stop Car Scanner (Settings → Apps → Car Scanner → Force stop), turn phone Bluetooth off and on, then tap Connect again.');
-    log('gatt.connect failed: '+e.message);if(!autoMode)wantConnected=false;return;}
+    log('gatt.connect failed: '+e.message);if(!autoMode)wantConnected=false;gaveUp=true;return;}
   log('Linked. Looking for the serial channel…');
   rxChar=txChar=null;
   let services=[];try{services=await withTimeout(server.getPrimaryServices(),10000,'Listing services');log('Services: '+services.map(x=>x.uuid.slice(4,8)).join(' '));}catch(e){log('Service list failed: '+e.message);}
@@ -383,7 +387,8 @@ async function openLinkInner(){
     for(const c of chars){const p=c.properties;if(!rx&&(p.notify||p.indicate))rx=c;if(!tx&&(p.write||p.writeWithoutResponse))tx=c;}
     if(!rx||!tx){log('Service '+s.uuid.slice(4,8)+': no serial pair');continue;}
     log('Trying service '+s.uuid.slice(4,8)+' (rx '+rx.uuid.slice(4,8)+', tx '+tx.uuid.slice(4,8)+')…');
-    try{await withTimeout(rx.startNotifications(),5000,'Starting notifications');}catch(e){log('  notifications: '+e.message);continue;}
+    // Android sometimes never confirms this step even though data then flows fine: carry on and test with ATI anyway.
+    try{await withTimeout(rx.startNotifications(),4000,'Starting notifications');}catch(e){log('  notifications: '+e.message+' Trying anyway…');}
     if(rxAttached&&rxAttached!==rx)rxAttached.removeEventListener('characteristicvaluechanged',onRx);
     rx.removeEventListener('characteristicvaluechanged',onRx);rx.addEventListener('characteristicvaluechanged',onRx);rxAttached=rx;
     rxChar=rx;txChar=tx;connected=true;drainUntil=0;
@@ -394,7 +399,7 @@ async function openLinkInner(){
     rx.removeEventListener('characteristicvaluechanged',onRx);rxAttached=null;try{await rx.stopNotifications();}catch(e){}
     rxChar=txChar=null;connected=false;
   }
-  if(!rxChar){chip('chipBt','No answer','bad');try{device.gatt.disconnect();}catch(_){}if(autoMode)return;btProblem('<b>Linked to the adapter, but it didn’t answer on any channel.</b> Unplug the adapter for 10 seconds, plug it back in, then try again. If it still fails, send Claude the adapter log from the Car tab.');try{device.gatt.disconnect();}catch(_){}wantConnected=false;return;}
+  if(!rxChar){chip('chipBt','No answer','bad');try{device.gatt.disconnect();}catch(_){}if(autoMode)return;btProblem('<b>Linked to the adapter, but it didn’t answer.</b> Close every other tab or window with this app, turn phone Bluetooth off and on, then tap Connect. If that fails, unplug the adapter for 10 seconds.');try{device.gatt.disconnect();}catch(_){}wantConnected=false;return;}
   connected=true;btProblem('');chip('chipBt',device.name||'Adapter','ok');$('btnConnect').textContent='Disconnect';
   await initElm();
 }
