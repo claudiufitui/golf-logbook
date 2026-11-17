@@ -48,62 +48,46 @@ h2{font-family:var(--display);font-weight:600;font-size:14px;text-transform:uppe
 .panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px}
 .muted{color:var(--muted)}.small{font-size:13px}.mono{font-family:var(--mono)}
 
-/* ---- Drive cockpit ---- */
-.cockpit{display:flex;flex-direction:column;gap:10px;border-radius:18px;padding:12px;border:1px solid var(--line);background:var(--panel);transition:box-shadow .3s}
-.cockpit.over{box-shadow:0 0 0 2px var(--bad),0 0 28px -4px var(--bad)}
-@media (prefers-reduced-motion:no-preference){.cockpit.over{animation:pulse 1s ease-in-out infinite}}
-@keyframes pulse{50%{box-shadow:0 0 0 2px var(--bad),0 0 8px -4px var(--bad)}}
-.lab{font-size:11px;text-transform:uppercase;letter-spacing:.14em;color:var(--muted)}
-.word{font-family:var(--display);font-weight:700;font-size:15px;letter-spacing:.12em;text-transform:uppercase;padding:2px 9px;border-radius:6px;background:var(--panel2);color:var(--muted)}
-/* rpm band */
-.rpm{display:flex;flex-direction:column;gap:6px}
-.rpm .head{display:flex;justify-content:space-between;align-items:baseline}
-.rpm .num{font-family:var(--display);font-weight:600;font-size:22px;font-variant-numeric:tabular-nums}
-.band{position:relative;height:46px;border-radius:10px;background:var(--panel2);overflow:hidden}
-.band .fill{position:absolute;inset:0 auto 0 0;width:0;border-radius:10px 0 0 10px;background:var(--ok);transition:width .15s linear,background .3s}
-.band .beyond{position:absolute;top:0;bottom:0;right:0;background:repeating-linear-gradient(135deg,color-mix(in srgb,var(--bad) 28%,transparent) 0 6px,transparent 6px 12px)}
-.band .eco{position:absolute;top:0;bottom:0;border-left:1px dashed var(--dim);border-right:1px dashed var(--dim)}
-.band .limit{position:absolute;top:-2px;bottom:-2px;width:4px;margin-left:-2px;background:var(--fg);border-radius:2px;transition:left .6s}
-.scale{position:relative;height:14px;font-family:var(--mono);font-size:10.5px;color:var(--dim)}
-.scale span{position:absolute;transform:translateX(-50%)}
-/* main pair */
-.pair{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:10px}
-.box{background:var(--panel2);border-radius:14px;padding:12px;display:flex;flex-direction:column;gap:8px;min-width:0;position:relative}
-.box .top2{display:flex;justify-content:space-between;align-items:center;gap:8px}
-.big{font-family:var(--display);font-weight:700;font-size:clamp(64px,19vw,120px);line-height:.9;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
-.big small{font-size:.38em;font-weight:600;color:var(--muted);margin-left:2px}
-.mid{font-family:var(--display);font-weight:700;font-size:clamp(44px,12vw,80px);line-height:.95;font-variant-numeric:tabular-nums}
-.mid small{font-size:.4em;font-weight:600;color:var(--muted);margin-left:2px}
-.thermo{position:relative;height:12px;border-radius:6px;background:linear-gradient(90deg,var(--cool) 0 33%,var(--warmup) 33% 56%,var(--ok) 56% 89%,var(--bad) 89% 100%);opacity:.35}
-.mark{position:absolute;top:-5px;width:6px;height:22px;margin-left:-3px;border-radius:3px;background:var(--fg);transition:left .6s;box-shadow:0 0 0 2px var(--panel2)}
-.thermo-wrap,.boost-wrap{position:relative}
-.eta{font-family:var(--mono);font-size:12px;color:var(--muted);min-height:1.2em}
-.bbar{position:relative;height:12px;border-radius:6px;background:var(--panel);overflow:hidden}
-.bbar .fill{position:absolute;inset:0 auto 0 0;width:0;background:var(--ok);transition:width .15s linear,background .3s}
-.bbar .limit{position:absolute;top:0;bottom:0;width:3px;margin-left:-1.5px;background:var(--fg)}
-.ring{position:absolute;inset:0;border-radius:14px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;background:color-mix(in srgb,var(--panel2) 92%,transparent)}
-.ring svg{width:84px;height:84px}
-.ring .t{font-family:var(--display);font-weight:700;font-size:22px}
-/* small row */
-.minis{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px}
-.mini{display:flex;flex-direction:column;min-width:0}
-.mini .v{font-family:var(--display);font-weight:600;font-size:22px;font-variant-numeric:tabular-nums;white-space:nowrap}
-.mini .u{font-family:var(--mono);font-size:10px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.st-cold{color:var(--cool)}.st-warm{color:var(--warmup)}.st-ok{color:var(--ok)}.st-hot{color:var(--bad)}.st-warn{color:var(--warn)}
-.bg-cold{background:color-mix(in srgb,var(--cool) 18%,transparent);color:var(--cool)}.bg-warm{background:color-mix(in srgb,var(--warmup) 18%,transparent);color:var(--warmup)}
-.bg-ok{background:color-mix(in srgb,var(--ok) 18%,transparent);color:var(--ok)}.bg-hot{background:color-mix(in srgb,var(--bad) 22%,transparent);color:var(--bad)}.bg-warn{background:color-mix(in srgb,var(--warn) 20%,transparent);color:var(--warn)}
+/* ---- Drive cockpit: four big numbers, colour = what to do ---- */
+.cockpit{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.tile{position:relative;border-radius:18px;padding:12px 14px 14px;background:var(--panel);border:1px solid var(--line);display:flex;flex-direction:column;justify-content:space-between;min-width:0;min-height:clamp(150px,24vh,240px);transition:background .25s,border-color .25s;overflow:hidden}
+.tile .hd{display:flex;justify-content:space-between;align-items:center;gap:6px}
+.tile .lab{font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.12em;color:var(--muted)}
+.tile .tag{font-family:var(--display);font-weight:700;font-size:16px;letter-spacing:.08em;text-transform:uppercase;padding:2px 10px;border-radius:8px;background:var(--panel2);color:var(--muted);white-space:nowrap}
+.tile .num{font-family:var(--display);font-weight:700;font-size:clamp(64px,17vw,150px);line-height:.88;font-variant-numeric:tabular-nums;letter-spacing:-.02em;color:var(--fg);white-space:nowrap}
+.tile .num small{font-size:.3em;font-weight:600;color:var(--muted);margin-left:4px;letter-spacing:0}
+.tile .bar{position:relative;height:10px;border-radius:5px;background:var(--panel2);overflow:hidden}
+.tile .bar i{position:absolute;inset:0 auto 0 0;width:0;background:var(--fg);transition:width .15s linear}
+.tile .bar b{position:absolute;top:0;bottom:0;width:4px;margin-left:-2px;background:var(--fg)}
+/* states: tint the whole tile */
+.tile.s-cold{background:color-mix(in srgb,var(--cool) 16%,var(--panel));border-color:color-mix(in srgb,var(--cool) 45%,transparent)}.tile.s-cold .num,.tile.s-cold .tag{color:var(--cool)}
+.tile.s-warm{background:color-mix(in srgb,var(--warmup) 14%,var(--panel));border-color:color-mix(in srgb,var(--warmup) 45%,transparent)}.tile.s-warm .num,.tile.s-warm .tag{color:var(--warmup)}
+.tile.s-ok{background:color-mix(in srgb,var(--ok) 14%,var(--panel));border-color:color-mix(in srgb,var(--ok) 45%,transparent)}.tile.s-ok .num,.tile.s-ok .tag{color:var(--ok)}
+.tile.s-warn{background:color-mix(in srgb,var(--warn) 18%,var(--panel));border-color:var(--warn)}.tile.s-warn .num,.tile.s-warn .tag{color:var(--warn)}
+.tile.s-hot{background:var(--bad);border-color:var(--bad)}.tile.s-hot .num,.tile.s-hot .tag,.tile.s-hot .lab,.tile.s-hot .num small{color:#fff}.tile.s-hot .bar{background:rgba(255,255,255,.25)}.tile.s-hot .bar i,.tile.s-hot .bar b{background:#fff}
+.tile.s-hot .tag{background:rgba(0,0,0,.2)}
+.tile .bar i{background:currentColor}
+.tile.s-cold .bar i{background:var(--cool)}.tile.s-warm .bar i{background:var(--warmup)}.tile.s-ok .bar i{background:var(--ok)}.tile.s-warn .bar i{background:var(--warn)}
+.ring{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;gap:14px;background:color-mix(in srgb,var(--cool) 16%,var(--panel))}
+.ring svg{width:min(70%,110px);height:auto;aspect-ratio:1}
+.ring .t{font-family:var(--display);font-weight:700;font-size:clamp(36px,9vw,64px);color:var(--cool);line-height:1}
+.ring .lab{display:block;margin-top:4px}
+.strip{grid-column:1/-1;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:10px 12px}
+.strip div{display:flex;flex-direction:column;min-width:0}
+.strip .k{font-size:11.5px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.strip .v{font-family:var(--display);font-weight:600;font-size:26px;line-height:1.1;font-variant-numeric:tabular-nums;white-space:nowrap}
+.strip .v.warn{color:var(--warn)}
+.tripbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:12px}
 .controls{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
 details.legend{margin-top:14px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 14px}
 details.legend summary{cursor:pointer;font-weight:600}
 details.legend p{margin:.6em 0;font-size:14px;color:var(--muted);max-width:65ch}
 details.legend b{color:var(--fg)}
-@media (max-width:560px){.pair{grid-template-columns:1fr}.minis{grid-template-columns:repeat(3,minmax(0,1fr))}}
-@media (orientation:landscape) and (max-height:600px){
-  .cockpit{padding:10px;gap:8px}.band{height:38px}
-  .big{font-size:min(26vh,110px)}.mid{font-size:min(18vh,72px)}
-}
+@media (max-width:420px){.strip{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media (orientation:landscape) and (max-height:600px){.tile{min-height:calc((100dvh - 150px)/2)}.tile .num{font-size:min(19vh,130px)}}
 body.drive-full .top{display:none}
 body.drive-full main{padding-top:8px}
+body.drive-full .tile{min-height:calc((100dvh - 120px)/2)}
 
 /* ---- Trips ---- */
 .trip{border-top:1px solid var(--line);padding:12px 0;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 10px}
@@ -145,52 +129,53 @@ input[type=number]{background:var(--panel2);border:1px solid var(--line);color:v
     <section class="view" id="view-drive">
       <div class="notice bad" id="btNotice" hidden></div>
       <div class="cockpit" id="cockpit">
-        <div class="rpm">
-          <div class="head"><span class="lab">RPM</span><span class="num" id="rpmNum">–</span></div>
-          <div class="band" id="band"><div class="eco" id="eco"></div><div class="beyond" id="beyond"></div><div class="fill" id="rpmFill"></div><div class="limit" id="rpmLimit"></div></div>
-          <div class="scale"><span style="left:0%;transform:none">0</span><span style="left:20%">1</span><span style="left:40%">2</span><span style="left:60%">3</span><span style="left:80%">4</span><span style="left:100%;transform:translateX(-100%)">5k</span></div>
+        <div class="tile" id="tRpm">
+          <div class="hd"><span class="lab">RPM</span><span class="tag" id="rpmTag">–</span></div>
+          <div class="num" id="rpmNum">–</div>
+          <div class="bar"><i id="rpmFill"></i><b id="rpmLim" hidden></b></div>
         </div>
-        <div class="pair">
-          <div class="box">
-            <div class="top2"><span class="lab">Coolant</span><span class="word" id="cWord">–</span></div>
-            <div class="big" id="cNum">–<small>°C</small></div>
-            <div class="thermo-wrap"><div class="thermo"></div><div class="mark" id="cMark" style="left:0"></div></div>
-            <div class="scale"><span style="left:0%;transform:none">20</span><span style="left:22.2%">40</span><span style="left:44.4%">60</span><span style="left:66.7%">80</span><span style="left:88.9%">100</span></div>
-            <div class="eta" id="cEta"></div>
-          </div>
-          <div class="box" id="boostBox">
-            <div class="top2"><span class="lab">Turbo</span><span class="word" id="bWord">–</span></div>
-            <div class="mid" id="bNum">–<small>bar</small></div>
-            <div class="bbar"><div class="fill" id="bFill"></div><div class="limit" id="bLimit" hidden></div></div>
-            <div class="scale"><span style="left:0%;transform:none">0</span><span style="left:35.7%">0.5</span><span style="left:71.4%">1.0</span><span style="left:100%;transform:translateX(-100%)">1.4</span></div>
-            <div class="ring" id="cool" hidden>
-              <svg viewBox="0 0 84 84" aria-hidden="true"><circle cx="42" cy="42" r="36" fill="none" stroke="var(--line)" stroke-width="7"/><circle id="coolArc" cx="42" cy="42" r="36" fill="none" stroke="var(--cool)" stroke-width="7" stroke-linecap="round" stroke-dasharray="226.2" stroke-dashoffset="0" transform="rotate(-90 42 42)"/></svg>
-              <span class="t" id="coolT">0:60</span><span class="lab">turbo cool-down</span>
-            </div>
+        <div class="tile" id="tSpeed">
+          <div class="hd"><span class="lab">Speed</span><span class="tag" id="spdSrc">GPS</span></div>
+          <div class="num" id="spdNum">–<small>km/h</small></div>
+          <div class="bar" style="visibility:hidden"><i></i></div>
+        </div>
+        <div class="tile" id="tCool">
+          <div class="hd"><span class="lab">Coolant</span><span class="tag" id="cTag">–</span></div>
+          <div class="num" id="cNum">–<small>°C</small></div>
+          <div class="bar"><i id="cFill"></i></div>
+        </div>
+        <div class="tile" id="tTurbo">
+          <div class="hd"><span class="lab">Turbo</span><span class="tag" id="bTag">–</span></div>
+          <div class="num" id="bNum">–<small>bar</small></div>
+          <div class="bar"><i id="bFill"></i><b id="bLim" hidden></b></div>
+          <div class="ring" id="cool" hidden>
+            <svg viewBox="0 0 84 84" aria-hidden="true"><circle cx="42" cy="42" r="36" fill="none" stroke="var(--line)" stroke-width="8"/><circle id="coolArc" cx="42" cy="42" r="36" fill="none" stroke="var(--cool)" stroke-width="8" stroke-linecap="round" stroke-dasharray="226.2" stroke-dashoffset="0" transform="rotate(-90 42 42)"/></svg>
+            <div><span class="t" id="coolT">0:60</span><span class="lab">let it idle</span></div>
           </div>
         </div>
-        <div class="minis">
-          <div class="mini"><span class="lab">Now</span><span class="v" id="mCons">–</span><span class="u" id="mConsU">L/100 est.</span></div>
-          <div class="mini"><span class="lab">Trip avg</span><span class="v" id="mAvg">–</span><span class="u">L/100 est.</span></div>
-          <div class="mini"><span class="lab">Trip</span><span class="v" id="mKm">0.0</span><span class="u" id="mTime">km · 0:00</span></div>
-          <div class="mini"><span class="lab">Battery</span><span class="v" id="mVolt">–</span><span class="u">V</span></div>
-          <div class="mini"><span class="lab">Intake</span><span class="v" id="mIat">–</span><span class="u">°C</span></div>
-          <div class="mini"><span class="lab">Speed</span><span class="v" id="mSpeed">–</span><span class="u">km/h</span></div>
+        <div class="strip">
+          <div><span class="k" id="kCons">Now L/100</span><span class="v" id="mCons">–</span></div>
+          <div><span class="k">Trip L/100</span><span class="v" id="mAvg">–</span></div>
+          <div><span class="k">Trip km</span><span class="v" id="mKm">–</span></div>
+          <div><span class="k">Battery V</span><span class="v" id="mVolt">–</span></div>
+          <div><span class="k">Intake °C</span><span class="v" id="mIat">–</span></div>
         </div>
       </div>
+      <div class="tripbar"><span class="chip" id="tripState">No trip</span><span class="muted small" id="tripInfo"></span></div>
       <div class="controls">
         <button class="btn primary" id="btnConnect">Connect adapter</button>
-        <button class="btn" id="btnRec" disabled>Start trip</button>
+        <button class="btn" id="btnRec" disabled>End trip now</button>
         <button class="btn" id="btnFull">Full screen</button>
         <button class="btn" id="btnDemo">Demo</button>
       </div>
       <p class="muted small" id="driveNote"></p>
       <details class="legend">
-        <summary>How to read this</summary>
-        <p><b>RPM bar.</b> The white line is how high you should rev right now. It moves with engine temperature: 2000 when cold, 2500 below 60°C, 3000 below 75°C, 3500 below 85°C, then 4500 when fully warm. Past the line the bar turns red and the whole panel glows. Amber means you’re close. Green means you’re in the diesel’s efficient zone, 1500–2600 rpm when warm, which is marked with dashed lines.</p>
-        <p><b>Coolant.</b> Exact temperature, which your dashboard needle can’t show. COLD below 60°C, WARMING to 80°C, READY from 80°C, HOT above 105°C. While warming it estimates how many minutes until 80°C.</p>
-        <p><b>Turbo.</b> Boost is how much extra air the turbo pushes in, in bar above outside pressure. OFF means cruising or idling, normal. ON means the turbo is working. FULL means it’s giving close to everything, about 1.0–1.2 bar on your engine. When the engine is cold, a white line shows the boost to stay under, because the oil hasn’t reached the turbo bearings properly yet. LOW appears if you floor it above 2000 rpm and boost stays under 0.6 bar for a few seconds. That can point to a boost leak, a sticky turbo or limp mode, so tell Claude if you see it often.</p>
-        <p><b>Turbo cool-down.</b> After hard driving, when you stop, a ring counts down a minute of idling so the turbo can cool before you switch off.</p>
+        <summary>How it works</summary>
+        <p><b>Trips run themselves.</b> Once the adapter is connected, a trip starts when the engine starts. Switch off for a fuel stop and the trip pauses. Start again within 15 minutes and it carries on. After 15 minutes off, it closes. Walk away from the car and the app simply loses the adapter. Keep the app open on screen while driving: Android stops web pages in the background.</p>
+        <p><b>RPM.</b> The tag shows the most you should rev right now, which rises as the engine warms: 2000 below 40°C, 2500 below 60°C, 3000 below 75°C, 3500 below 85°C, then 4500. Blue: cold but fine. Green: warm and in the efficient zone, 1500–2600. Amber: close to the limit, or labouring at low revs under load. Solid red: over the limit.</p>
+        <p><b>Coolant.</b> Exact temperature. COLD below 60°C, WARMING to 80°C, READY from 80°C, HOT above 105°C.</p>
+        <p><b>Turbo.</b> OFF: cruising, idling or coasting. ON: working. FULL: near maximum, about 1.0–1.2 bar on your engine. When cold, the tag shows the boost to stay under, and the tile goes red past it. LOW: full throttle above 2000 rpm but under 0.6 bar for a few seconds, which can mean a boost leak or limp mode.</p>
+        <p><b>Let it idle.</b> Appears when you stop after a stretch of real boost while moving, for 30–90 seconds depending on how hard the turbo worked. Revving in neutral doesn’t count.</p>
       </details>
     </section>
 
@@ -308,6 +293,8 @@ let calib=1; try{calib=parseFloat(localStorage.getItem('golf-calib'))||1;}catch(
 $('calib').value=calib.toFixed(2);
 $('calib').onchange=()=>{const v=parseFloat($('calib').value);if(v>0.3&&v<3){calib=v;try{localStorage.setItem('golf-calib',String(v));}catch(e){}}};
 
+function store(k,v){try{localStorage.setItem(k,v);}catch(e){}}
+function recall(k){try{return localStorage.getItem(k);}catch(e){return null;}}
 // =============== log ===============
 const logLines=[];
 function log(s){logLines.push(new Date().toTimeString().slice(0,8)+'  '+s);if(logLines.length>500)logLines.shift();const el=$('log');el.textContent=logLines.join('\n');el.scrollTop=el.scrollHeight;}
@@ -340,6 +327,7 @@ async function connect(){
     chip('chipBt','Choosing…','warn');
     device=await navigator.bluetooth.requestDevice({acceptAllDevices:true,optionalServices:BLE_SERVICES});
     device.addEventListener('gattserverdisconnected',onDisconnect);
+    store('golf-dev',device.id);
     wantConnected=true;await openLink();
   }catch(e){
     log('Connect failed: '+e.name+' '+e.message);
@@ -353,16 +341,22 @@ async function openLink(){
   log('Connecting to '+(device.name||'device')+'…');
   const withTimeout=(p,ms,what)=>Promise.race([p,new Promise((_,rej)=>setTimeout(()=>rej(new Error(what+' took too long.')),ms))]);
   let server;
-  try{server=await withTimeout(device.gatt.connect(),12000,'Connecting');}
-  catch(e){try{device.gatt.disconnect();}catch(_){}
+  let lastErr=null;
+  for(let attempt=1;attempt<=3&&!server;attempt++){
+    try{server=await withTimeout(device.gatt.connect(),10000,'Connecting');}
+    catch(e){lastErr=e;log('Attempt '+attempt+': '+e.message);try{device.gatt.disconnect();}catch(_){}await new Promise(r=>setTimeout(r,1500));}
+  }
+  if(!server){const e=lastErr||new Error('no link');
     chip('chipBt','No link','bad');
-    btProblem('<b>The adapter didn’t answer.</b> Another app is probably still holding it. Force-stop Car Scanner (Settings → Apps → Car Scanner → Force stop), turn phone Bluetooth off and on, then tap Connect again.');
-    log('gatt.connect failed: '+e.message);wantConnected=false;return;}
+    if(!autoMode)btProblem('<b>The adapter didn’t answer.</b> Another app is probably still holding it. Force-stop Car Scanner (Settings → Apps → Car Scanner → Force stop), turn phone Bluetooth off and on, then tap Connect again.');
+    log('gatt.connect failed: '+e.message);if(!autoMode)wantConnected=false;return;}
   log('Linked. Looking for the serial channel…');
   rxChar=txChar=null;
   let services=[];try{services=await withTimeout(server.getPrimaryServices(),10000,'Listing services');log('Services: '+services.map(x=>x.uuid.slice(4,8)).join(' '));}catch(e){log('Service list failed: '+e.message);}
   // Try each service that has a notify + write pair; keep the one that answers like an ELM327. 18F0 first: that's the iCar/Vgate data channel.
-  services.sort((x,y)=>(y.uuid.startsWith('000018f0')?1:0)-(x.uuid.startsWith('000018f0')?1:0));
+  const known=recall('golf-svc');
+  const rank=u=>u===known?2:u.startsWith('000018f0')?1:0;
+  services.sort((x,y)=>rank(y.uuid)-rank(x.uuid));
   const onRx=e=>{rxBuf+=new TextDecoder().decode(e.target.value);if(rxBuf.includes('>'))flush();};
   for(const s of services){
     let chars=[];try{chars=await withTimeout(s.getCharacteristics(),5000,'Reading characteristics');}catch(e){log('Chars '+s.uuid.slice(4,8)+': '+e.message);continue;}
@@ -375,7 +369,7 @@ async function openLink(){
     rxChar=rx;txChar=tx;connected=true;
     const r=await cmd('ATI',3000);
     log('  ATI → '+clean(r));
-    if(r&&r.trim()){break;}
+    if(r&&r.trim()){store('golf-svc',s.uuid);break;}
     rx.removeEventListener('characteristicvaluechanged',onRx);try{await rx.stopNotifications();}catch(e){}
     rxChar=txChar=null;connected=false;
   }
@@ -384,9 +378,27 @@ async function openLink(){
   await initElm();
 }
 function onDisconnect(){
-  connected=false;chip('chipBt','Disconnected','bad');$('btnConnect').textContent='Connect adapter';$('btnDtc').disabled=true;
+  connected=false;chip('chipBt','Adapter lost','warn');$('btnConnect').textContent='Connect adapter';$('btnDtc').disabled=true;
   log('Adapter disconnected');
-  if(wantConnected){log('Reconnecting…');setTimeout(async()=>{try{await openLink();}catch(e){log('Reconnect failed: '+e.message);chip('chipBt','Lost','bad');}},1500);}
+  for(const k in live)delete live[k];
+  if(wantConnected)scheduleReconnect();
+}
+// Keep trying quietly while the page is open: the adapter sleeps when the car is off, and you may walk away and come back.
+let reconTimer=null,reconSince=null;
+function scheduleReconnect(){
+  reconSince=reconSince??Date.now();
+  if(Date.now()-reconSince>30*60000){log('Stopped trying to reconnect after 30 min');reconSince=null;wantConnected=false;chip('chipBt','Adapter off');return;}
+  clearTimeout(reconTimer);
+  reconTimer=setTimeout(async()=>{if(connected||!wantConnected)return;autoMode=true;try{await openLink();}catch(e){log('Reconnect: '+e.message);}autoMode=false;if(!connected)scheduleReconnect();else reconSince=null;},8000);
+}
+let autoMode=false;
+// On open: if Chrome remembers the adapter, connect without asking.
+async function autoConnect(){
+  const id=recall('golf-dev');if(!id||!navigator.bluetooth?.getDevices)return;
+  try{const list=await navigator.bluetooth.getDevices();const d=list.find(x=>x.id===id);if(!d)return;
+    device=d;device.addEventListener('gattserverdisconnected',onDisconnect);wantConnected=true;log('Found the adapter from last time, connecting…');
+    autoMode=true;await openLink();autoMode=false;if(!connected)scheduleReconnect();
+  }catch(e){log('Auto-connect: '+e.message);}
 }
 function flush(){const i=rxBuf.indexOf('>');const chunk=rxBuf.slice(0,i);rxBuf=rxBuf.slice(i+1);if(pending){const p=pending;pending=null;clearTimeout(p.t);p.res(chunk);}}
 async function writeStr(s){const d=new TextEncoder().encode(s+'\r');for(let i=0;i<d.length;i+=20){const part=d.slice(i,i+20);const w=(txChar.properties.writeWithoutResponse&&txChar.writeValueWithoutResponse)?txChar.writeValueWithoutResponse(part):txChar.writeValue(part);await Promise.race([w,new Promise((_,rej)=>setTimeout(()=>rej(new Error('write timed out')),3000))]);}}
@@ -408,13 +420,20 @@ function payload(r,mode,pid){
   return null;
 }
 async function initElm(){
-  for(const s of ['ATZ','ATE0','ATL0','ATS0','ATH0','ATAT2','ATSP0']){const r=await cmd(s,s==='ATZ'?4000:2000);log(s+' → '+clean(r));}
-  const first=await cmd('0100',12000);log('0100 → '+clean(first));
+  const savedProto=recall('golf-proto');
+  for(const s of ['ATWS','ATE0','ATL0','ATS0','ATH0','ATAT2',savedProto?'ATSP'+savedProto:'ATSP0']){const r=await cmd(s,s==='ATWS'?3000:1500);log(s+' → '+clean(r));}
+  let first=await cmd('0100',savedProto?4000:12000);log('0100 → '+clean(first));
+  if(!payload(first,'41','00')&&savedProto){log('Saved protocol failed, searching…');await cmd('ATSP0');first=await cmd('0100',12000);log('0100 → '+clean(first));}
   const dp=await cmd('ATDPN');log('ATDPN → '+clean(dp));
   const n=(dp||'').replace(/[^0-9A-C]/gi,'').slice(-1).toUpperCase();isCan=['6','7','8','9','A','B','C'].includes(n);
+  if(n)store('golf-proto',n);
+  // Telling the adapter to expect one answer saves it waiting for more: much faster.
+  const t0=performance.now();const a=await cmd('010C1',1500);const fastOk=!!payload(a,'41','0C');
+  suffix=fastOk?'1':'';log('Single-answer mode '+(fastOk?'on':'off')+' ('+Math.round(performance.now()-t0)+' ms)');
   await readSupported(first);
   await readVehicle();
-  $('btnRec').disabled=false;$('btnDtc').disabled=false;
+  $('btnDtc').disabled=false;
+  startGps();keepAwake();
   if(!demo)poll();
 }
 async function readSupported(first){
@@ -460,7 +479,8 @@ async function readMonitors(){
 }
 const fresh={};   // when each field last got a real answer
 function setLive(k,v){live[k]=v;fresh[k]=performance.now();}
-async function readPid(p){const r=await cmd('01'+p,1200);const b=payload(r,'41',p);if(!b||b.length<P[p].b)return false;setLive(P[p].k,P[p].f(b[0],b[1],b[2],b[3]));return true;}
+let suffix='';
+async function readPid(p){const r=await cmd('01'+p+suffix,1200);const b=payload(r,'41',p);if(!b||b.length<P[p].b)return false;setLive(P[p].k,P[p].f(b[0],b[1],b[2],b[3]));return true;}
 // Several PIDs in one request (CAN allows up to 6). Answer: 41 then pid,data,pid,data…, possibly split over numbered lines.
 function parseMulti(r,pids){
   if(!r)return null;
@@ -476,7 +496,7 @@ function parseMulti(r,pids){
 let multiOk=null;
 async function readFast(list){
   if(multiOk!==false&&isCan&&list.length>1){
-    const r=await cmd('01'+list.join(''),1500);const got=parseMulti(r,list);
+    const r=await cmd('01'+list.join('')+suffix,1500);const got=parseMulti(r,list);
     if(multiOk===null){multiOk=!!got&&Object.keys(got).length===list.length;log('Multi-PID '+(multiOk?'works':'not usable')+': '+clean(r));}
     if(got){for(const p in got)setLive(P[p].k,P[p].f(...got[p]));if(multiOk)return;}
   }
@@ -489,6 +509,8 @@ async function poll(){
   const slow=[...supported].filter(p=>P[p]&&!FAST.includes(p)&&!ONCE.includes(p)&&p!=='42');
   while(connected&&!demo){
     const t0=performance.now();
+    // Ignition off: the adapter stays powered, the ECU goes quiet. Just check every 2 s whether the engine is back.
+    if(fresh.rpm==null||performance.now()-fresh.rpm>6000){await readPid('0C');expireStale();tick();if(fresh.rpm==null||performance.now()-fresh.rpm>6000){await new Promise(r=>setTimeout(r,2000));continue;}}
     await readFast(fast);
     // one slow sensor per cycle; every 6th cycle the battery voltage straight from the adapter
     if(slowIdx%6===5)await readVoltage();
@@ -541,38 +563,66 @@ const FIELDS=['rpm','speed','coolant','map','boost','load','maf','iat','throttle
 const EXTRA=['lat','lon','alt','gpsSpeed','heading','ax','ay','az'];
 const CHUNK=60;
 function tripId(){const d=new Date();const p=n=>String(n).padStart(2,'0');return `${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;}
-function newTrip(isDemo){return {id:tripId(),start:Date.now(),last:Date.now(),buf:[],chunk:0,n:0,km:0,fuel:0,idleS:0,hotS:0,maxRpm:0,maxBoost:0,maxSpeed:0,maxCoolant:-99,warm80:null,coolStart:live.coolant??null,demo:isDemo,spark:[]};}
-async function startTrip(){
-  rec=newTrip(demo);$('btnRec').textContent='Stop trip';$('btnRec').classList.add('recording');$('chipRec').hidden=false;
-  startGps();try{wake=await navigator.wakeLock?.request('screen');}catch(e){}
-  log('Trip started '+rec.id);
+function newTrip(isDemo){return {id:tripId(),start:Date.now(),last:Date.now(),buf:[],chunk:0,n:0,km:0,fuel:0,idleS:0,hotS:0,engineS:0,stops:0,maxRpm:0,maxBoost:0,maxSpeed:0,maxCoolant:-99,warm80:null,coolStart:live.coolant??null,demo:isDemo,spark:[]};}
+const PAUSE_MAX=15*60000;
+let paused=null,pausedAt=null;
+// Engine on → trip runs. Engine off → pause. Back within 15 min → same trip. Otherwise it closes.
+function tripAuto(){
+  const engineOn=live.rpm!=null&&live.rpm>300;
+  if(engineOn&&!rec){
+    if(paused&&Date.now()-pausedAt<PAUSE_MAX){rec=paused;paused=null;rec.last=Date.now();rec.stops++;log('Trip resumed '+rec.id);}
+    else{if(paused)closeTrip(paused);paused=null;rec=newTrip(demo);log('Trip started '+rec.id);}
+  }else if(!engineOn&&rec){
+    const t=rec;rec=null;paused=t;pausedAt=Date.now();flushChunk(t);log('Trip paused, engine off');
+  }
+  if(paused&&Date.now()-pausedAt>=PAUSE_MAX){closeTrip(paused);paused=null;}
+  renderTripState();
+}
+setInterval(()=>{if(!connected&&!demo)tripAuto();},30000);
+function renderTripState(){
+  const c=$('tripState'),i=$('tripInfo');
+  if(rec){c.className='chip rec';c.textContent='Trip '+fmt((Date.now()-rec.start)/1000);i.textContent=rec.km.toFixed(1)+' km'+(rec.demo?' · demo':'');$('btnRec').disabled=false;$('chipRec').hidden=false;$('chipRec').textContent=c.textContent;}
+  else if(paused){const left=Math.max(0,PAUSE_MAX-(Date.now()-pausedAt));c.className='chip warn';c.textContent='Paused';i.textContent='continues if you start within '+Math.ceil(left/60000)+' min';$('btnRec').disabled=false;$('chipRec').hidden=true;}
+  else{c.className='chip';c.textContent='No trip';i.textContent=connected?'starts with the engine':'';$('btnRec').disabled=true;$('chipRec').hidden=true;}
 }
 function sampleTrip(now){
   if(!rec)return;const dt=Math.min(3,(now-rec.last)/1000);rec.last=now;
-  if(live.speed!=null)rec.km+=live.speed*dt/3600;
+  const sp=live.speed;
+  if(sp!=null)rec.km+=sp*dt/3600;
   if(live.lph!=null)rec.fuel+=live.lph*dt/3600;
+  rec.engineS+=dt;
   const rpm=live.rpm??0;
-  if(rpm>300&&(live.speed??0)<2)rec.idleS+=dt;
-  if(rpm>=2000&&(live.speed??0)>=60)rec.hotS+=dt;
-  rec.maxRpm=Math.max(rec.maxRpm,rpm);rec.maxBoost=Math.max(rec.maxBoost,live.boost??0);rec.maxSpeed=Math.max(rec.maxSpeed,live.speed??0);rec.maxCoolant=Math.max(rec.maxCoolant,live.coolant??-99);
-  if(rec.warm80==null&&(live.coolant??0)>=80)rec.warm80=Math.round((now-rec.start)/1000);
+  if(rpm>300&&(sp??0)<2)rec.idleS+=dt;
+  if(rpm>=2000&&(sp??0)>=60)rec.hotS+=dt;
+  rec.maxRpm=Math.max(rec.maxRpm,rpm);rec.maxBoost=Math.max(rec.maxBoost,live.boost??0);rec.maxSpeed=Math.max(rec.maxSpeed,sp??0);rec.maxCoolant=Math.max(rec.maxCoolant,live.coolant??-99);
+  if(rec.warm80==null&&(live.coolant??0)>=80)rec.warm80=Math.round(rec.engineS);
   const r=v=>v==null||!isFinite(v)?null:Math.round(v*100)/100;
   rec.buf.push([Math.round((now-rec.start)/100)/10].concat(FIELDS.map(f=>r(live[f])),[gps.lat??null,gps.lon??null,r(gps.alt),r(gps.speed),r(gps.heading),r(motion.x),r(motion.y),r(motion.z)]));
-  rec.n++;if(rec.n%5===0)rec.spark.push([Math.round(live.speed??0),Math.round(rpm)]);
-  if(rec.buf.length>=CHUNK)flushChunk();
+  rec.n++;if(rec.n%5===0)rec.spark.push([Math.round(sp??0),Math.round(rpm)]);
+  if(rec.buf.length>=CHUNK)flushChunk(rec);
 }
-function flushChunk(){if(!rec||!rec.buf.length||rec.demo){if(rec)rec.buf=[];return Promise.resolve();}const rows=rec.buf;rec.buf=[];const t=rec;return put('chunks',{trip:t.id,i:t.chunk++,rows}).then(()=>put('trips',{...summary(t),open:true}));}
-function summary(t){return {id:t.id,start:t.start,end:Date.now(),durationS:Math.round((Date.now()-t.start)/1000),km:+t.km.toFixed(2),fuelL:+t.fuel.toFixed(3),avgL100:t.km>0.5?+(t.fuel/t.km*100).toFixed(2):null,
+function flushChunk(t){t=t||rec;if(!t)return Promise.resolve();if(t.demo){t.buf=[];return Promise.resolve();}
+  const rows=t.buf;t.buf=[];const save=()=>put('trips',{...summary(t),open:true});
+  return rows.length?put('chunks',{trip:t.id,i:t.chunk++,rows}).then(save):save();}
+const KEEP=['km','fuel','idleS','hotS','engineS','stops','maxRpm','maxBoost','maxSpeed','maxCoolant','warm80','coolStart','chunk','n','spark','start','id'];
+function summary(t){return {id:t.id,start:t.start,end:t.last||Date.now(),durationS:Math.round(((t.last||Date.now())-t.start)/1000),engineS:Math.round(t.engineS||0),stops:t.stops||0,km:+t.km.toFixed(2),fuelL:+t.fuel.toFixed(3),avgL100:t.km>0.5?+(t.fuel/t.km*100).toFixed(2):null,
   samples:t.n,idleS:Math.round(t.idleS),hotS:Math.round(t.hotS),maxRpm:Math.round(t.maxRpm),maxBoost:+t.maxBoost.toFixed(2),maxSpeed:Math.round(t.maxSpeed),coolantStart:t.coolStart,maxCoolant:t.maxCoolant,warmTo80S:t.warm80,
-  calib,fields:['t'].concat(FIELDS,EXTRA),supported:[...supported],spark:t.spark,demo:t.demo};}
+  calib,fields:['t'].concat(FIELDS,EXTRA),supported:[...supported],spark:t.spark,demo:t.demo,state:Object.fromEntries(KEEP.map(k=>[k,t[k]]))};}
 const demoTrips=[];
-async function stopTrip(){
-  if(!rec)return;const t=rec;$('btnRec').disabled=true;$('btnRec').textContent='Saving…';
-  await flushChunk();const s=summary(t);rec=null;
+async function closeTrip(t){
+  if(!t)return;await flushChunk(t);const s=summary(t);s.open=false;
   if(t.demo)demoTrips.unshift(s);else await put('trips',s);
-  stopGps();try{await wake?.release();}catch(e){}
-  $('btnRec').textContent='Start trip';$('btnRec').classList.remove('recording');$('btnRec').disabled=!(connected||demo);$('chipRec').hidden=true;
-  log(`Trip saved: ${s.km} km, ${s.samples} samples`);
+  log(`Trip closed: ${s.km} km`);renderTrips();
+}
+async function endTripNow(){const t=rec||paused;rec=null;paused=null;await closeTrip(t);renderTripState();}
+// After a reload: pick up a trip that paused recently, close older ones.
+async function reviveTrips(){
+  const open=(await getAll('trips')).filter(t=>t.open);
+  for(const t of open){
+    if(Date.now()-t.end<PAUSE_MAX&&t.state&&!paused){paused={...newTrip(false),...t.state,buf:[],last:t.end};pausedAt=t.end;log('Picked up paused trip '+t.id);}
+    else{t.open=false;await put('trips',t);}
+  }
+  renderTripState();
 }
 function fmt(s){s=Math.round(s||0);const m=Math.floor(s/60);return m>=60?`${Math.floor(m/60)}:${String(m%60).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`:`${m}:${String(s%60).padStart(2,'0')}`;}
 function sparkSvg(sp){
@@ -587,7 +637,7 @@ async function renderTrips(){
   el.innerHTML=all.map(t=>{const d=new Date(t.start);
     return `<div class="trip"><span class="when">${d.toLocaleDateString('ro-RO',{weekday:'short',day:'numeric',month:'short'})} · ${d.toLocaleTimeString('ro-RO',{hour:'2-digit',minute:'2-digit'})}${t.demo?' <span class="chip">demo, not saved</span>':''}</span>
       <span class="acts">${t.demo?'':`<button class="btn" data-csv="${t.id}">CSV</button><button class="btn" data-share="${t.id}">Share</button>`}</span>
-      <span class="meta">${t.km} km · ${fmt(t.durationS)} · ${t.avgL100!=null?t.avgL100+' L/100 est. · ':''}max ${t.maxRpm} rpm · ${t.maxBoost} bar · idle ${fmt(t.idleS)}${t.warmTo80S!=null?' · 80°C at '+fmt(t.warmTo80S):' · never reached 80°C'}</span>
+      <span class="meta">${t.km} km · ${fmt(t.engineS??t.durationS)} driving${t.stops?' · '+t.stops+' stop'+(t.stops>1?'s':''):''} · ${t.avgL100!=null?t.avgL100+' L/100 est. · ':''}max ${t.maxRpm} rpm · ${t.maxBoost} bar · idle ${fmt(t.idleS)}${t.warmTo80S!=null?' · 80°C at '+fmt(t.warmTo80S):' · never reached 80°C'}</span>
       ${sparkSvg(t.spark)}</div>`;}).join('');
   el.querySelectorAll('[data-csv]').forEach(b=>b.onclick=()=>exportTrip(b.dataset.csv,false));
   el.querySelectorAll('[data-share]').forEach(b=>b.onclick=()=>exportTrip(b.dataset.share,true));
@@ -605,102 +655,96 @@ $('btnExportAll').onclick=async()=>{const trips=await getAll('trips');const out=
 // =============== phone sensors ===============
 function startGps(){
   if(!navigator.geolocation){chip('chipGps','No GPS');return;}
-  gpsWatch=navigator.geolocation.watchPosition(p=>{const c=p.coords;gps={lat:+c.latitude.toFixed(6),lon:+c.longitude.toFixed(6),alt:c.altitude,speed:c.speed!=null?c.speed*3.6:null,heading:c.heading};chip('chipGps','GPS ±'+Math.round(c.accuracy)+' m','ok');},
+  if(gpsWatch!=null)return;
+  gpsWatch=navigator.geolocation.watchPosition(p=>{const c=p.coords;gps={lat:+c.latitude.toFixed(6),lon:+c.longitude.toFixed(6),alt:c.altitude,speed:c.speed!=null?c.speed*3.6:null,heading:c.heading,at:performance.now()};chip('chipGps','GPS ±'+Math.round(c.accuracy)+' m','ok');},
     e=>{chip('chipGps','GPS denied','warn');log('GPS: '+e.message);},{enableHighAccuracy:true,maximumAge:1000});
 }
+async function keepAwake(){try{if(!wake||wake.released)wake=await navigator.wakeLock?.request('screen');}catch(e){}}
 function stopGps(){if(gpsWatch!=null)navigator.geolocation.clearWatch(gpsWatch);gpsWatch=null;chip('chipGps','GPS off');}
 window.addEventListener('devicemotion',e=>{const a=e.acceleration||e.accelerationIncludingGravity;if(a){motion={x:a.x,y:a.y,z:a.z};}});
 
 // =============== main loop: derive, record, draw ===============
-function tick(){const now=performance.now();derive(now);sampleTrip(Date.now());updateCockpit(now);}
-// How hard the engine may be worked at a given coolant temperature
+function tick(){const now=performance.now();derive(now);tripAuto();sampleTrip(Date.now());turboHeat(now);updateCockpit(now);}
 function rpmLimit(c){if(c==null)return null;if(c<40)return 2000;if(c<60)return 2500;if(c<75)return 3000;if(c<85)return 3500;return REDLINE;}
 function boostLimit(c){if(c==null)return null;if(c<50)return 0.4;if(c<70)return 0.7;return null;}
-const cHist=[];let lowSince=null,lastHard=-1e9,stopAt=null;
 const pct=(v,max)=>Math.max(0,Math.min(100,v/max*100));
-function phase(c){return c<60?'cold':c<80?'warm':c<=105?'ok':'hot';}
+// Turbo heat: builds only from real boost while moving, fades over a couple of minutes.
+let heat=0,heatT=null,lowSince=null,coolUntil=null,coolTotal=0;
+function turboHeat(now){
+  const dt=heatT?Math.min(3,(now-heatT)/1000):0;heatT=now;
+  const b=live.boost??0,sp=live.speed??0,r=live.rpm??0;
+  if(sp>15&&b>0.4)heat+=(b-0.4)*dt;            // bar·seconds above 0.4 while driving
+  heat*=Math.pow(0.5,dt/120);                   // halves every 2 minutes
+  const idling=sp<1&&r>400&&r<1100;
+  if(idling&&coolUntil==null&&heat>4){coolTotal=Math.round(Math.min(90,Math.max(30,heat*4)));coolUntil=now+coolTotal*1000;}
+  if(!idling||r<=400)coolUntil=null;
+  if(coolUntil!=null&&now>=coolUntil){coolUntil=null;heat=0;}
+}
+function setTile(id,state){const el=$(id);el.className='tile'+(state?' s-'+state:'');}
 function updateCockpit(now){
   const c=live.coolant,r=live.rpm,b=live.boost,ld=live.load??0,sp=live.speed;
-  const lim=rpmLimit(c),warm=c!=null&&c>=80;
-  // ---- rpm band
-  $('rpmNum').textContent=r!=null?Math.round(r):'–';
-  const L=lim??REDLINE;
-  $('rpmLimit').style.left=pct(L,RPM_MAX)+'%';$('rpmLimit').hidden=lim==null;
-  $('beyond').style.left=pct(L,RPM_MAX)+'%';
-  $('eco').style.left=pct(1500,RPM_MAX)+'%';$('eco').style.width=(pct(2600,RPM_MAX)-pct(1500,RPM_MAX))+'%';$('eco').hidden=!warm;
-  let col='var(--fg)';
+  const lim=rpmLimit(c),warm=c!=null&&c>=80,L=lim??REDLINE;
+  // RPM
+  let rs='';
   if(r!=null){
-    if(r>L)col='var(--bad)';
-    else if(r>L*0.88)col='var(--warn)';
-    else if(r<1300&&ld>70&&(sp??0)>5)col='var(--warn)';          // lugging: too low for the load
-    else if(warm&&r>=1500&&r<=2600)col='var(--ok)';
-    else if(!warm)col='var(--cool)';
+    if(r>L)rs='hot';else if(r>L*0.88)rs='warn';else if(r<1300&&ld>70&&(sp??0)>5)rs='warn';
+    else if(!warm&&c!=null)rs='cold';else if(warm&&r>=1500&&r<=2600)rs='ok';
   }
-  $('rpmFill').style.width=r!=null?pct(r,RPM_MAX)+'%':'0';$('rpmFill').style.background=col;
-  // ---- coolant
-  if(c!=null){
-    const ph=phase(c);
-    $('cNum').innerHTML=Math.round(c)+'<small>°C</small>';$('cNum').className='big st-'+ph;
-    $('cWord').textContent={cold:'cold',warm:'warming',ok:'ready',hot:'hot'}[ph];$('cWord').className='word bg-'+ph;
-    $('cMark').style.left=pct(c-20,90)+'%';
-    cHist.push([now,c]);while(cHist.length&&now-cHist[0][0]>90000)cHist.shift();
-    let eta='';
-    if(c<80&&cHist.length>5&&now-cHist[0][0]>30000){const rate=(c-cHist[0][1])/((now-cHist[0][0])/60000);if(rate>0.3)eta=`80°C in ~${Math.max(1,Math.round((80-c)/rate))} min at this pace`;}
-    $('cEta').textContent=eta;
-  }else{$('cNum').innerHTML='–<small>°C</small>';$('cNum').className='big';$('cWord').textContent='–';$('cWord').className='word';$('cEta').textContent='';}
-  // ---- turbo
+  setTile('tRpm',rs);$('rpmNum').textContent=r!=null?Math.round(r):'–';
+  $('rpmTag').textContent=lim!=null?'max '+lim:'–';
+  $('rpmFill').style.width=r!=null?pct(r,RPM_MAX)+'%':'0';$('rpmLim').hidden=lim==null;if(lim!=null)$('rpmLim').style.left=pct(lim,RPM_MAX)+'%';
+  // Speed: GPS when fresh, else the car
+  const gpsOk=gps.speed!=null&&gps.at&&now-gps.at<4000;
+  const v=gpsOk?gps.speed:sp;
+  $('spdNum').innerHTML=(v!=null?Math.round(v):'–')+'<small>km/h</small>';$('spdSrc').textContent=gpsOk?'GPS':(sp!=null?'car':'–');
+  // Coolant
+  if(c!=null){const ph=c<60?'cold':c<80?'warm':c<=105?'ok':'hot';setTile('tCool',ph);
+    $('cNum').innerHTML=Math.round(c)+'<small>°C</small>';$('cTag').textContent={cold:'cold',warm:'warming',ok:'ready',hot:'hot'}[ph];$('cFill').style.width=pct(c-20,90)+'%';}
+  else{setTile('tCool','');$('cNum').innerHTML='–<small>°C</small>';$('cTag').textContent='–';$('cFill').style.width='0';}
+  // Turbo
   const bl=boostLimit(c);
-  if(b!=null){
-    const bb=Math.max(0,b);
-    $('bNum').innerHTML=bb.toFixed(2)+'<small>bar</small>';
-    let w='off',cls='',fill='var(--dim)';
-    if(bl!=null&&bb>bl){w='easy';cls='hot';fill='var(--bad)';}
-    else if(bb>=0.9){w='full';cls='warn';fill='var(--accent)';}
-    else if(bb>=0.15){w='on';cls='ok';fill='var(--ok)';}
-    // low boost under full load
-    if(ld>90&&(r??0)>2000&&(r??0)<3800&&bb<0.6){lowSince=lowSince??now;if(now-lowSince>3000){w='low';cls='warn';fill='var(--warn)';}}else lowSince=null;
-    $('bWord').textContent=w;$('bWord').className='word'+(cls?' bg-'+cls:'');
-    $('bFill').style.width=pct(bb,1.4)+'%';$('bFill').style.background=fill;
-    if(bb>0.8||ld>80)lastHard=now;
-  }else{$('bNum').innerHTML='–<small>bar</small>';$('bWord').textContent='–';$('bWord').className='word';$('bFill').style.width='0';}
-  $('bLimit').hidden=bl==null;if(bl!=null)$('bLimit').style.left=pct(bl,1.4)+'%';
-  // ---- turbo cool-down after hard driving
-  const stopped=sp!=null&&sp<1&&(r??0)>400;
-  if(stopped&&now-lastHard<180000){stopAt=stopAt??now;}else if(!stopped)stopAt=null;
-  const left=stopAt!=null?Math.max(0,60-(now-stopAt)/1000):0;
-  $('cool').hidden=!(stopAt!=null&&left>0);
-  if(!$('cool').hidden){$('coolT').textContent='0:'+String(Math.ceil(left)).padStart(2,'0');$('coolArc').setAttribute('stroke-dashoffset',String(226.2*(1-left/60)));}
-  // ---- whole-panel warning
-  $('cockpit').classList.toggle('over',(r!=null&&r>L)||(b!=null&&bl!=null&&b>bl));
-  // ---- small row
-  if(live.l100!=null){$('mCons').textContent=Math.min(live.l100,99).toFixed(1);$('mConsU').textContent='L/100 est.';}
-  else if(live.lph!=null){$('mCons').textContent=live.lph.toFixed(1);$('mConsU').textContent='L/h est.';}else $('mCons').textContent='–';
-  $('mVolt').textContent=live.volt!=null?live.volt.toFixed(1):'–';$('mVolt').className='v'+(live.volt!=null&&live.volt<12.2&&(r??0)>500?' st-warn':'');
+  if(b!=null){const bb=Math.max(0,b);let st='',w='off';
+    if(bl!=null&&bb>bl){st='hot';w='easy';}
+    else if(bb>=0.9){st='warn';w='full';}
+    else if(bb>=0.15){st='ok';w='on';}
+    if(ld>90&&(r??0)>2000&&(r??0)<3800&&bb<0.6){lowSince=lowSince??now;if(now-lowSince>3000){st='warn';w='low';}}else lowSince=null;
+    if(bl!=null&&st!=='hot')w='max '+bl.toFixed(1);
+    setTile('tTurbo',st);$('bNum').innerHTML=bb.toFixed(2)+'<small>bar</small>';$('bTag').textContent=w;$('bFill').style.width=pct(bb,1.4)+'%';}
+  else{setTile('tTurbo','');$('bNum').innerHTML='–<small>bar</small>';$('bTag').textContent='–';$('bFill').style.width='0';}
+  $('bLim').hidden=bl==null;if(bl!=null)$('bLim').style.left=pct(bl,1.4)+'%';
+  // Cool-down
+  const left=coolUntil!=null?Math.max(0,(coolUntil-now)/1000):0;$('cool').hidden=!left;
+  if(left){$('coolT').textContent=Math.floor(left/60)+':'+String(Math.ceil(left)%60).padStart(2,'0');$('coolArc').setAttribute('stroke-dashoffset',String(226.2*(1-left/coolTotal)));}
+  // Strip
+  if(live.l100!=null){$('kCons').textContent='Now L/100';$('mCons').textContent=Math.min(live.l100,99).toFixed(1);}
+  else{$('kCons').textContent='Now L/h';$('mCons').textContent=live.lph!=null?live.lph.toFixed(1):'–';}
+  const t=rec||paused;
+  $('mAvg').textContent=t&&t.km>0.3?(t.fuel/t.km*100).toFixed(1):'–';$('mKm').textContent=t?t.km.toFixed(1):'–';
+  $('mVolt').textContent=live.volt!=null?live.volt.toFixed(1):'–';$('mVolt').className='v'+(live.volt!=null&&((r??0)>500?live.volt<13.2:live.volt<12.2)?' warn':'');
   $('mIat').textContent=live.iat!=null?Math.round(live.iat):'–';
-  $('mSpeed').textContent=sp!=null?Math.round(sp):'–';
-  if(rec){$('mKm').textContent=rec.km.toFixed(1);$('mTime').textContent='km · '+fmt((Date.now()-rec.start)/1000);$('mAvg').textContent=rec.km>0.3?(rec.fuel/rec.km*100).toFixed(1):'–';$('chipRec').textContent='REC '+fmt((Date.now()-rec.start)/1000);}
+  if(rec)renderTripState();
 }
 
 // =============== demo ===============
 let demoTimer=null,dT=0;
 function toggleDemo(){
   demo=!demo;$('btnDemo').textContent=demo?'Stop demo':'Demo';
-  if(demo){$('driveNote').textContent='Demo: invented values, not your car.';$('btnRec').disabled=false;dT=0;live.coolant=18;live.iat=12;live.volt=14.2;supported=new Set(['0C','0D','0B','04','10','05','0F','42','11']);
+  if(demo){$('driveNote').textContent='Demo: invented values, not your car.';dT=0;live.coolant=18;live.iat=12;live.volt=14.2;supported=new Set(['0C','0D','0B','04','10','05','0F','42','11']);
     demoTimer=setInterval(()=>{dT+=0.25;const c=Math.max(0,Math.sin(dT/12)),acc=Math.max(0,Math.cos(dT/12));live.speed=Math.round(c*95);
-      live.rpm=830+c*1700+acc*900*(c>0.1?1:0)+Math.random()*30;live.load=18+acc*60*(c>0.05?1:0)+c*10;live.map=99+acc*95*(c>0.05?1:0)+c*20;live.maf=8+live.load*0.6;live.coolant=Math.min(92,live.coolant+0.35);live.iat=12+c*8;tick();},250);}
-  else{clearInterval(demoTimer);if(rec)stopTrip();for(const k in live)delete live[k];supported=new Set();updateCockpit(performance.now());$('btnRec').disabled=!connected;$('driveNote').textContent='';if(connected)poll();}
+      live.rpm=830+c*1700+acc*900*(c>0.1?1:0)+Math.random()*30;live.load=18+acc*60*(c>0.05?1:0)+c*10;live.map=99+acc*95*(c>0.05?1:0)+c*20;live.maf=8+live.load*0.6;live.coolant=Math.min(92,live.coolant+0.35);live.iat=12+c*8;gps={speed:live.speed*1.02,at:performance.now()};tick();},250);}
+  else{clearInterval(demoTimer);const t=rec||paused;rec=null;paused=null;if(t)closeTrip(t);for(const k in live)delete live[k];supported=new Set();updateCockpit(performance.now());renderTripState();$('driveNote').textContent='';if(connected)poll();}
 }
 
 // =============== wire up ===============
 $('btnConnect').onclick=connect;
-$('btnRec').onclick=()=>rec?stopTrip():startTrip();
+$('btnRec').onclick=endTripNow;
 $('btnDemo').onclick=toggleDemo;
 $('btnDtc').onclick=readDtc;
 $('btnFull').onclick=async()=>{document.body.classList.toggle('drive-full');try{if(!document.fullscreenElement)await document.documentElement.requestFullscreen();else await document.exitFullscreen();}catch(e){}};
 document.addEventListener('fullscreenchange',()=>{if(!document.fullscreenElement)document.body.classList.remove('drive-full');});
-document.addEventListener('visibilitychange',async()=>{if(rec&&document.visibilityState==='visible'){try{wake=await navigator.wakeLock?.request('screen');}catch(e){}}});
-window.addEventListener('beforeunload',e=>{if(rec&&!rec.demo){flushChunk();e.preventDefault();}});
-openDb().then(()=>renderTrips());
+document.addEventListener('visibilitychange',()=>{if((connected||rec)&&document.visibilityState==='visible')keepAwake();});
+window.addEventListener('pagehide',()=>{if(rec&&!rec.demo)flushChunk(rec);});
+openDb().then(async()=>{await reviveTrips();renderTrips();autoConnect();});
 if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
 updateCockpit(performance.now());
 })();
