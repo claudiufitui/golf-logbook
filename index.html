@@ -104,6 +104,7 @@ body.drive-full .tile{min-height:calc((100dvh - 120px)/2)}
 .dtc{font-family:var(--mono);font-weight:600;color:var(--warn)}
 label.field{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted)}
 input[type=text],input[type=password]{background:var(--panel2);border:1px solid var(--line);color:var(--fg);border-radius:8px;padding:10px;font:500 14px var(--mono);width:16em;max-width:100%}
+select{background:var(--panel2);border:1px solid var(--line);color:var(--fg);border-radius:8px;padding:10px;font:500 14px var(--body);max-width:100%}
 input[type=number]{background:var(--panel2);border:1px solid var(--line);color:var(--fg);border-radius:8px;padding:10px;font:500 15px var(--mono);width:9em}
 @media (prefers-reduced-motion:reduce){.g .meter i{transition:none}}
 </style>
@@ -111,7 +112,7 @@ input[type=number]{background:var(--panel2);border:1px solid var(--line);color:v
 <body>
 <div class="app">
   <div class="top">
-    <div class="brand">Golf Logbook<small>1.9 TDI BLS · v13</small></div>
+    <div class="brand">Golf Logbook<small>1.9 TDI BLS · v14</small></div>
     <div class="chips">
       <span class="chip" id="chipBt">Adapter off</span>
       <span class="chip" id="chipGps">GPS off</span>
@@ -206,6 +207,12 @@ input[type=number]{background:var(--panel2);border:1px solid var(--line);color:v
 
     <!-- CAR -->
     <section class="view" id="view-car" hidden>
+      <div class="panel">
+        <h2>Connection</h2>
+        <div class="row" style="margin-bottom:6px"><label class="field" for="transportSel">How to talk to the adapter
+          <select id="transportSel"><option value="serial">Bluetooth classic (Android-Vlink)</option><option value="ble">Bluetooth LE (IOS-Vlink)</option></select></label></div>
+        <p class="small muted" id="transportHint">Classic is the adapter’s Android mode and usually the most reliable. Pair “Android-Vlink” once in your phone’s Bluetooth settings with PIN 1234, then tap Connect.</p>
+      </div>
       <div class="panel">
         <h2>Vehicle</h2>
         <dl class="kv" id="vehicle"><dt>Status</dt><dd>Connect to read the car.</dd></dl>
@@ -329,12 +336,35 @@ function getAll(store,range){return new Promise(res=>{if(!idb)return res([]);try
 async function tripRows(id){const ch=await getAll('chunks',IDBKeyRange.bound([id,0],[id,1e9]));ch.sort((a,b)=>a.i-b.i);return ch.flatMap(c=>c.rows);}
 
 // =============== Bluetooth / ELM327 ===============
+// Two ways to reach the adapter: classic Bluetooth serial (Web Serial, Chrome 137+ on Android) or Bluetooth LE (Web Bluetooth).
+const SPP='00001101-0000-1000-8000-00805f9b34fb';
+let transport=recall('golf-transport')||(navigator.serial?'serial':'ble');
+if(transport==='serial'&&!navigator.serial)transport='ble';
+let port=null,sReader=null,sWriter=null,sClosing=false;
+function setTransport(t){transport=t;store('golf-transport',t);const sel=$('transportSel');if(sel)sel.value=t;}
+// Close whichever link is open. The disconnect handler does the rest.
+function dropLink(){
+  if(transport==='serial'){closeSerial();}
+  else{try{device?.gatt?.disconnect();}catch(_){}}
+}
 function btProblem(html){const n=$('btNotice');n.hidden=!html;n.innerHTML=html||'';}
 async function connect(){
-  if(connected){wantConnected=false;try{device.gatt.disconnect();}catch(e){}return;}
+  if(connected){wantConnected=false;dropLink();return;}
   if(linking){log('Connect tapped while already connecting');return;}
   parkedSince=null;
   clearTimeout(reconTimer);
+  if(transport==='serial'){
+    try{
+      chip('chipBt','Choosing…','warn');
+      port=await navigator.serial.requestPort({allowedBluetoothServiceClassIds:[SPP],filters:[{bluetoothServiceClassId:SPP}]});
+      wantConnected=true;await openLink();
+    }catch(e){
+      log('Connect failed: '+e.name+' '+e.message);
+      if(e.name==='NotFoundError'){chip('chipBt','Adapter off');btProblem('<b>No paired adapter chosen.</b> If the list was empty: phone Settings → Bluetooth → Pair new device → <b>Android-Vlink</b>, PIN <b>1234</b>. Then tap Connect again.');return;}
+      btProblem('<b>Couldn’t connect.</b> '+e.message);chip('chipBt','Error','bad');
+    }
+    return;
+  }
   if(!navigator.bluetooth){btProblem('<b>Bluetooth isn’t available here.</b> Use Chrome on Android, with Bluetooth and Location turned on.');return;}
   try{
     chip('chipBt','Choosing…','warn');
@@ -356,11 +386,41 @@ async function openLink(){
   if(linking){log('Already connecting, skipped a second attempt');return;}
   linking=true;
   try{
+    if(transport==='serial'){await openSerial();return;}
     await openLinkInner();
     if(!connected&&device&&!gaveUp){log('Starting the Bluetooth link from scratch…');try{device.gatt.disconnect();}catch(_){}await new Promise(r=>setTimeout(r,2500));await openLinkInner();}
   }finally{linking=false;gaveUp=false;}
 }
 let gaveUp=false;
+async function openSerial(){
+  if(!port)return;
+  chip('chipBt','Connecting…','warn');log('Opening classic Bluetooth serial…');
+  try{await port.open({baudRate:38400});}
+  catch(e){if(!/already open/i.test(e.message)){log('Serial open failed: '+e.message);chip('chipBt','No link','bad');
+    if(!autoMode)btProblem('<b>Couldn’t open the adapter.</b> Check the ignition is on and no other app is connected to it, then tap Connect again.');return;}}
+  sClosing=false;sWriter=port.writable.getWriter();sReader=port.readable.getReader();
+  connected=true;drainUntil=0;readSerial();
+  let r=await cmd('ATI',3000);
+  if(!(r&&r.trim())){log('  no answer, waking the adapter…');await cmd('',800);r=await cmd('ATI',3000);}
+  log('  ATI → '+clean(r));
+  if(!(r&&r.trim())){chip('chipBt','No answer','bad');await closeSerial();if(!autoMode)btProblem('<b>The adapter is linked but silent.</b> Unplug it for 10 seconds, plug it back in, then tap Connect.');return;}
+  btProblem('');chip('chipBt','Android-Vlink','ok');$('btnConnect').textContent='Disconnect';
+  await initElm();
+}
+async function readSerial(){
+  const r=sReader;
+  try{while(true){const {value,done}=await r.read();if(done)break;rxBuf+=rxDec.decode(value);if(rxBuf.includes('>'))flush();}}
+  catch(e){if(!sClosing)log('Serial read stopped: '+e.message);}
+  finally{try{r.releaseLock();}catch(_){}
+    if(connected){connected=false;closeSerial(true);onDisconnect();}}
+}
+async function closeSerial(fromReader){
+  sClosing=true;
+  if(!fromReader){try{await sReader?.cancel();}catch(_){}}
+  try{sWriter?.releaseLock();}catch(_){}
+  try{await port?.close();}catch(_){}
+  sReader=sWriter=null;
+}
 async function openLinkInner(){
   chip('chipBt','Connecting…','warn');
   log('Connecting to '+(device.name||'device')+'…');
@@ -423,6 +483,11 @@ function scheduleReconnect(){
 let autoMode=false;
 // On open: if Chrome remembers the adapter, connect without asking.
 async function autoConnect(){
+  if(transport==='serial'){
+    try{const ports=await navigator.serial.getPorts();if(!ports.length)return;port=ports[0];wantConnected=true;log('Found the paired adapter, connecting…');
+      autoMode=true;await openLink();autoMode=false;if(!connected)scheduleReconnect();}catch(e){log('Auto-connect: '+e.message);}
+    return;
+  }
   const id=recall('golf-dev');if(!id||!navigator.bluetooth?.getDevices)return;
   try{const list=await navigator.bluetooth.getDevices();const d=list.find(x=>x.id===id);if(!d)return;
     device=d;device.addEventListener('gattserverdisconnected',onDisconnect);wantConnected=true;log('Found the adapter from last time, connecting…');
@@ -430,7 +495,9 @@ async function autoConnect(){
   }catch(e){log('Auto-connect: '+e.message);}
 }
 function flush(){const i=rxBuf.indexOf('>');const chunk=rxBuf.slice(0,i);rxBuf=rxBuf.slice(i+1);if(pending){const p=pending;pending=null;clearTimeout(p.t);p.res(chunk);}}
-async function writeStr(s){const d=new TextEncoder().encode(s+'\r');for(let i=0;i<d.length;i+=20){const part=d.slice(i,i+20);const w=(txChar.properties.writeWithoutResponse&&txChar.writeValueWithoutResponse)?txChar.writeValueWithoutResponse(part):txChar.writeValue(part);await Promise.race([w,new Promise((_,rej)=>setTimeout(()=>rej(new Error('write timed out')),3000))]);}}
+async function writeStr(s){const d=new TextEncoder().encode(s+'\r');
+  if(transport==='serial'){await Promise.race([sWriter.write(d),new Promise((_,rej)=>setTimeout(()=>rej(new Error('write timed out')),3000))]);return;}
+  for(let i=0;i<d.length;i+=20){const part=d.slice(i,i+20);const w=(txChar.properties.writeWithoutResponse&&txChar.writeValueWithoutResponse)?txChar.writeValueWithoutResponse(part):txChar.writeValue(part);await Promise.race([w,new Promise((_,rej)=>setTimeout(()=>rej(new Error('write timed out')),3000))]);}}
 let q=Promise.resolve(),drainUntil=0;
 function cmd(c,timeout=2000){
   const run=()=>new Promise(async res=>{
@@ -453,7 +520,7 @@ function payload(r,mode,pid){
 async function initElm(){
   if(parkedSince){
     const v=await cmd('ATRV',1500);const m=(v||'').match(/(\d+(\.\d+)?)\s*V/i);const volts=m?parseFloat(m[1]):null;
-    if(volts!=null&&volts<13.2){log('Peek: '+volts+' V, engine still off. Letting the adapter sleep.');chip('chipBt','Car parked');try{device.gatt.disconnect();}catch(_){}return;}
+    if(volts!=null&&volts<13.2){log('Peek: '+volts+' V, engine still off. Letting the adapter sleep.');chip('chipBt','Car parked');dropLink();return;}
     log('Peek: '+(volts??'?')+' V, engine running again.');parkedSince=null;
   }
   const savedProto=recall('golf-proto');
@@ -534,7 +601,7 @@ async function poll(){
       if(fresh.rpm==null||performance.now()-fresh.rpm>6000){
         offSince=offSince??performance.now();
         // Engine off for a minute and a half: stop talking so the adapter can go to sleep and spare the battery.
-        if(performance.now()-offSince>90000){log('Engine off for 90 s: releasing the adapter so it can sleep');parkedSince=Date.now();offSince=null;try{device.gatt.disconnect();}catch(_){}return;}
+        if(performance.now()-offSince>90000){log('Engine off for 90 s: releasing the adapter so it can sleep');parkedSince=Date.now();offSince=null;dropLink();return;}
         await new Promise(r=>setTimeout(r,2000));continue;}
     }
     offSince=null;
@@ -805,6 +872,9 @@ function toggleDemo(){
 
 // =============== wire up ===============
 $('btnConnect').onclick=connect;
+$('transportSel').value=transport;
+if(!navigator.serial){$('transportSel').querySelector('[value=serial]').disabled=true;$('transportHint').textContent='This browser can’t use classic Bluetooth, so the app uses Bluetooth LE.';}
+$('transportSel').onchange=()=>{if(connected){wantConnected=false;dropLink();}setTransport($('transportSel').value);log('Connection type: '+transport);};
 $('btnRec').onclick=endTripNow;
 $('btnDemo').onclick=toggleDemo;
 $('btnDtc').onclick=readDtc;
