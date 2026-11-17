@@ -326,15 +326,25 @@ async function openLink(){
   log('Linked. Looking for the serial channel…');
   rxChar=txChar=null;
   let services=[];try{services=await withTimeout(server.getPrimaryServices(),10000,'Listing services');log('Services: '+services.map(x=>x.uuid.slice(4,8)).join(' '));}catch(e){log('Service list failed: '+e.message);}
+  // Try each service that has a notify + write pair; keep the one that answers like an ELM327. 18F0 first: that's the iCar/Vgate data channel.
+  services.sort((x,y)=>(y.uuid.startsWith('000018f0')?1:0)-(x.uuid.startsWith('000018f0')?1:0));
+  const onRx=e=>{rxBuf+=new TextDecoder().decode(e.target.value);if(rxBuf.includes('>'))flush();};
   for(const s of services){
-    let chars=[];try{chars=await s.getCharacteristics();}catch(e){continue;}
+    let chars=[];try{chars=await withTimeout(s.getCharacteristics(),5000,'Reading characteristics');}catch(e){log('Chars '+s.uuid.slice(4,8)+': '+e.message);continue;}
     let rx=null,tx=null;
     for(const c of chars){const p=c.properties;if(!rx&&(p.notify||p.indicate))rx=c;if(!tx&&(p.write||p.writeWithoutResponse))tx=c;}
-    if(rx&&tx){rxChar=rx;txChar=tx;log('Serial channel on service '+s.uuid);break;}
+    if(!rx||!tx){log('Service '+s.uuid.slice(4,8)+': no serial pair');continue;}
+    log('Trying service '+s.uuid.slice(4,8)+' (rx '+rx.uuid.slice(4,8)+', tx '+tx.uuid.slice(4,8)+')…');
+    try{await withTimeout(rx.startNotifications(),5000,'Starting notifications');}catch(e){log('  notifications: '+e.message);continue;}
+    rx.addEventListener('characteristicvaluechanged',onRx);
+    rxChar=rx;txChar=tx;connected=true;
+    const r=await cmd('ATI',3000);
+    log('  ATI → '+clean(r));
+    if(r&&r.trim()){break;}
+    rx.removeEventListener('characteristicvaluechanged',onRx);try{await rx.stopNotifications();}catch(e){}
+    rxChar=txChar=null;connected=false;
   }
-  if(!rxChar){chip('chipBt','Unknown device','bad');btProblem('<b>This device has no serial channel the app knows.</b> Make sure you picked the OBD adapter in the list, not another Bluetooth device. Then send Claude the adapter log from the Car tab.');try{device.gatt.disconnect();}catch(_){}wantConnected=false;return;}
-  await rxChar.startNotifications();
-  rxChar.addEventListener('characteristicvaluechanged',e=>{rxBuf+=new TextDecoder().decode(e.target.value);if(rxBuf.includes('>'))flush();});
+  if(!rxChar){chip('chipBt','No answer','bad');btProblem('<b>Linked to the adapter, but it didn’t answer on any channel.</b> Unplug the adapter for 10 seconds, plug it back in, then try again. If it still fails, send Claude the adapter log from the Car tab.');try{device.gatt.disconnect();}catch(_){}wantConnected=false;return;}
   connected=true;btProblem('');chip('chipBt',device.name||'Adapter','ok');$('btnConnect').textContent='Disconnect';
   await initElm();
 }
@@ -344,7 +354,7 @@ function onDisconnect(){
   if(wantConnected){log('Reconnecting…');setTimeout(async()=>{try{await openLink();}catch(e){log('Reconnect failed: '+e.message);chip('chipBt','Lost','bad');}},1500);}
 }
 function flush(){const i=rxBuf.indexOf('>');const chunk=rxBuf.slice(0,i);rxBuf=rxBuf.slice(i+1);if(pending){const p=pending;pending=null;clearTimeout(p.t);p.res(chunk);}}
-async function writeStr(s){const d=new TextEncoder().encode(s+'\r');for(let i=0;i<d.length;i+=20){const part=d.slice(i,i+20);if(txChar.properties.writeWithoutResponse&&txChar.writeValueWithoutResponse)await txChar.writeValueWithoutResponse(part);else await txChar.writeValue(part);}}
+async function writeStr(s){const d=new TextEncoder().encode(s+'\r');for(let i=0;i<d.length;i+=20){const part=d.slice(i,i+20);const w=(txChar.properties.writeWithoutResponse&&txChar.writeValueWithoutResponse)?txChar.writeValueWithoutResponse(part):txChar.writeValue(part);await Promise.race([w,new Promise((_,rej)=>setTimeout(()=>rej(new Error('write timed out')),3000))]);}}
 let q=Promise.resolve();
 function cmd(c,timeout=2000){
   const run=()=>new Promise(async res=>{
