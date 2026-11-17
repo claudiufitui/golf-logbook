@@ -184,7 +184,7 @@ input[type=number]{background:var(--panel2);border:1px solid var(--line);color:v
     <section class="view" id="view-trips" hidden>
       <div class="panel">
         <h2>Trips</h2>
-        <div id="trips"><p class="muted small">No trips yet. Connect, tap Start trip, drive, then tap Stop.</p></div>
+        <div id="trips"><p class="muted small">No trips yet. Connect the adapter and start the engine: trips record themselves.</p></div>
       </div>
       <div class="panel">
         <h2>Send trips to Claude</h2>
@@ -326,7 +326,6 @@ function openDb(){return new Promise(res=>{try{const r=indexedDB.open('golf-logb
   r.onsuccess=()=>{idb=r.result;res(idb);};r.onerror=()=>{log('Storage unavailable: '+r.error);res(null);};}catch(e){res(null);}});}
 function put(store,val){return new Promise(res=>{if(!idb)return res(false);try{const t=idb.transaction(store,'readwrite');t.objectStore(store).put(val);t.oncomplete=()=>res(true);t.onerror=()=>{log('Save failed: '+t.error);res(false);};}catch(e){res(false);}});}
 function getAll(store,range){return new Promise(res=>{if(!idb)return res([]);try{const r=idb.transaction(store).objectStore(store).getAll(range);r.onsuccess=()=>res(r.result||[]);r.onerror=()=>res([]);}catch(e){res([]);}});}
-function del(store,key){return new Promise(res=>{if(!idb)return res();const t=idb.transaction(store,'readwrite');t.objectStore(store).delete(key);t.oncomplete=()=>res();});}
 async function tripRows(id){const ch=await getAll('chunks',IDBKeyRange.bound([id,0],[id,1e9]));ch.sort((a,b)=>a.i-b.i);return ch.flatMap(c=>c.rows);}
 
 // =============== Bluetooth / ELM327 ===============
@@ -368,7 +367,7 @@ async function openLink(){
   const known=recall('golf-svc');
   const rank=u=>u===known?2:u.startsWith('000018f0')?1:0;
   services.sort((x,y)=>rank(y.uuid)-rank(x.uuid));
-  const onRx=e=>{rxBuf+=new TextDecoder().decode(e.target.value);if(rxBuf.includes('>'))flush();};
+  const dec=new TextDecoder();const onRx=e=>{rxBuf+=dec.decode(e.target.value);if(rxBuf.includes('>'))flush();};
   for(const s of services){
     let chars=[];try{chars=await withTimeout(s.getCharacteristics(),5000,'Reading characteristics');}catch(e){log('Chars '+s.uuid.slice(4,8)+': '+e.message);continue;}
     let rx=null,tx=null;
@@ -398,7 +397,7 @@ function onDisconnect(){
 let reconTimer=null,reconSince=null;
 function scheduleReconnect(){
   reconSince=reconSince??Date.now();
-  if(Date.now()-reconSince>30*60000){log('Stopped trying to reconnect after 30 min');reconSince=null;wantConnected=false;chip('chipBt','Adapter off');return;}
+  if(Date.now()-reconSince>30*60000){log('Stopped trying to reconnect after 30 min');reconSince=null;wantConnected=false;chip('chipBt','Adapter off');stopGps();try{wake?.release();}catch(e){}tripAuto();return;}
   clearTimeout(reconTimer);
   reconTimer=setTimeout(async()=>{if(connected||!wantConnected)return;autoMode=true;try{await openLink();}catch(e){log('Reconnect: '+e.message);}autoMode=false;if(!connected)scheduleReconnect();else reconSince=null;},8000);
 }
@@ -413,11 +412,13 @@ async function autoConnect(){
 }
 function flush(){const i=rxBuf.indexOf('>');const chunk=rxBuf.slice(0,i);rxBuf=rxBuf.slice(i+1);if(pending){const p=pending;pending=null;clearTimeout(p.t);p.res(chunk);}}
 async function writeStr(s){const d=new TextEncoder().encode(s+'\r');for(let i=0;i<d.length;i+=20){const part=d.slice(i,i+20);const w=(txChar.properties.writeWithoutResponse&&txChar.writeValueWithoutResponse)?txChar.writeValueWithoutResponse(part):txChar.writeValue(part);await Promise.race([w,new Promise((_,rej)=>setTimeout(()=>rej(new Error('write timed out')),3000))]);}}
-let q=Promise.resolve();
+let q=Promise.resolve(),drainUntil=0;
 function cmd(c,timeout=2000){
   const run=()=>new Promise(async res=>{
     if(!connected)return res(null);
-    rxBuf='';pending={res,t:setTimeout(()=>{pending=null;res(null);},timeout)};
+    // After a timeout the late answer may still arrive: give it a moment to land and be thrown away.
+    const wait=drainUntil-performance.now();if(wait>0)await new Promise(r=>setTimeout(r,wait));
+    rxBuf='';pending={res,t:setTimeout(()=>{pending=null;drainUntil=performance.now()+250;res(null);},timeout)};
     try{await writeStr(c);}catch(e){if(pending){clearTimeout(pending.t);pending=null;}log(c+' write failed: '+e.message);res(null);}
   });
   const p=q.then(run);q=p.catch(()=>{});return p;
@@ -492,37 +493,17 @@ const fresh={};   // when each field last got a real answer
 function setLive(k,v){live[k]=v;fresh[k]=performance.now();}
 let suffix='';
 async function readPid(p){const r=await cmd('01'+p+suffix,1200);const b=payload(r,'41',p);if(!b||b.length<P[p].b)return false;setLive(P[p].k,P[p].f(b[0],b[1],b[2],b[3]));return true;}
-// Several PIDs in one request (CAN allows up to 6). Answer: 41 then pid,data,pid,data…, possibly split over numbered lines.
-function parseMulti(r,pids){
-  if(!r)return null;
-  const ls=(r||'').split(/[\r\n]+/).map(x=>x.replace(/\s/g,'').toUpperCase()).filter(Boolean);
-  let hex=ls.filter(l=>!/^[0-9A-F]{3}$/.test(l)).map(l=>l.replace(/^[0-9A-F]:/,'')).join('');
-  const i=hex.indexOf('41');if(i<0)return null;hex=hex.slice(i+2);
-  const bytes=[];for(let j=0;j+1<hex.length;j+=2)bytes.push(parseInt(hex.slice(j,j+2),16));
-  const out={};let j=0;
-  while(j<bytes.length){const pid=bytes[j].toString(16).padStart(2,'0').toUpperCase();const d=P[pid];if(!d||!pids.includes(pid))break;
-    const data=bytes.slice(j+1,j+1+d.b);if(data.length<d.b)break;out[pid]=data;j+=1+d.b;if(bytes[j]===0x41)j++;}
-  return Object.keys(out).length?out:null;
-}
-let multiOk=null;
-async function readFast(list){
-  if(multiOk!==false&&isCan&&list.length>1){
-    const r=await cmd('01'+list.join('')+suffix,1500);const got=parseMulti(r,list);
-    if(multiOk===null){multiOk=!!got&&Object.keys(got).length===list.length;log('Multi-PID '+(multiOk?'works':'not usable')+': '+clean(r));}
-    if(got){for(const p in got)setLive(P[p].k,P[p].f(...got[p]));if(multiOk)return;}
-  }
-  for(const p of list)await readPid(p);
-}
 async function readVoltage(){const r=await cmd('ATRV',1000);const m=(r||'').match(/(\d+(\.\d+)?)\s*V/i);if(m)setLive('volt',parseFloat(m[1]));}
-let replies=0,hzT=performance.now(),reqMs=0;
+let replies=0,hzT=performance.now(),reqMs=0,pollGen=0;
 // One question at a time, RPM every other question, and the screen updates after every answer.
 // Order: rpm, speed, rpm, boost, rpm, load, rpm, air flow, rpm, <one slow sensor or battery>
 async function poll(){
+  const gen=++pollGen;   // a newer poll() (after a reconnect) makes this one stop
   const has=p=>supported.has(p);
   const slow=[...supported].filter(p=>P[p]&&!FAST.includes(p)&&!ONCE.includes(p)&&p!=='42');
   let slowIdx=0,step=0;
-  const others=['0D','0B','04','10'].filter(has);
-  while(connected&&!demo){
+  const others=FAST.filter(p=>p!=='0C'&&has(p));
+  while(connected&&!demo&&gen===pollGen){
     // Ignition off: the adapter stays powered, the ECU goes quiet. Check every 2 s whether the engine is back.
     if(fresh.rpm==null||performance.now()-fresh.rpm>6000){await readPid('0C');expireStale();tick();if(fresh.rpm==null||performance.now()-fresh.rpm>6000){await new Promise(r=>setTimeout(r,2000));continue;}}
     const t0=performance.now();
@@ -557,7 +538,7 @@ async function readDtc(){
 let lastSpeed=null,lastSpeedT=null,accG=0;
 function derive(now){
   if(live.baro!=null)baroBase=live.baro;
-  else{ if(live.map!=null&&(live.rpm??0)<50)mapAtRest=live.map;
+  else{ if(live.map!=null&&live.rpm!=null&&live.rpm<50)mapAtRest=live.map;
         if(mapAtRest!=null)baroBase=mapAtRest;
         else if(live.map!=null&&(live.rpm??0)>500&&(live.rpm??0)<1000&&(live.load??100)<30)baroBase=baroBase==null?live.map:Math.min(baroBase,live.map); }
   if(live.map!=null)live.boost=Math.max(-0.2,(live.map-(baroBase??99))/100);
@@ -584,16 +565,18 @@ let paused=null,pausedAt=null;
 function tripAuto(){
   const engineOn=live.rpm!=null&&live.rpm>300;
   if(engineOn&&!rec){
-    if(paused&&Date.now()-pausedAt<PAUSE_MAX){rec=paused;paused=null;rec.last=Date.now();rec.stops++;log('Trip resumed '+rec.id);}
-    else{if(paused)closeTrip(paused);paused=null;rec=newTrip(demo);log('Trip started '+rec.id);}
+    if(paused&&Date.now()-pausedAt<PAUSE_MAX){rec=paused;paused=null;rec.last=Date.now();rec.stops++;log('Trip resumed '+rec.id);renderTripState(true);}
+    else{if(paused)closeTrip(paused);paused=null;rec=newTrip(demo);log('Trip started '+rec.id);renderTripState(true);}
   }else if(!engineOn&&rec){
-    const t=rec;rec=null;paused=t;pausedAt=Date.now();flushChunk(t);log('Trip paused, engine off');
+    const t=rec;rec=null;paused=t;pausedAt=Date.now();flushChunk(t);log('Trip paused, engine off');renderTripState(true);
   }
   if(paused&&Date.now()-pausedAt>=PAUSE_MAX){closeTrip(paused);paused=null;}
   renderTripState();
 }
 setInterval(()=>{if(!connected&&!demo)tripAuto();},30000);
-function renderTripState(){
+let tripStateT=0;
+function renderTripState(force){
+  const nowMs=Date.now();if(!force&&nowMs-tripStateT<1000)return;tripStateT=nowMs;
   const c=$('tripState'),i=$('tripInfo');
   if(rec){c.className='chip rec';c.textContent='Trip '+fmt((Date.now()-rec.start)/1000);i.textContent=rec.km.toFixed(1)+' km'+(rec.demo?' · demo':'');$('btnRec').disabled=false;$('chipRec').hidden=false;$('chipRec').textContent=c.textContent;}
   else if(paused){const left=Math.max(0,PAUSE_MAX-(Date.now()-pausedAt));c.className='chip warn';c.textContent='Paused';i.textContent='continues if you start within '+Math.ceil(left/60000)+' min';$('btnRec').disabled=false;$('chipRec').hidden=true;}
@@ -611,7 +594,8 @@ function sampleTrip(now){
   rec.maxRpm=Math.max(rec.maxRpm,rpm);rec.maxBoost=Math.max(rec.maxBoost,live.boost??0);rec.maxSpeed=Math.max(rec.maxSpeed,sp??0);rec.maxCoolant=Math.max(rec.maxCoolant,live.coolant??-99);
   if(rec.warm80==null&&(live.coolant??0)>=80)rec.warm80=Math.round(rec.engineS);
   const r=v=>v==null||!isFinite(v)?null:Math.round(v*100)/100;
-  rec.buf.push([Math.round((now-rec.start)/100)/10].concat(FIELDS.map(f=>r(live[f])),[gps.lat??null,gps.lon??null,r(gps.alt),r(gps.speed),r(gps.heading),r(motion.x),r(motion.y),r(motion.z)]));
+  const g=gps.at&&performance.now()-gps.at<5000?gps:{};
+  rec.buf.push([Math.round((now-rec.start)/100)/10].concat(FIELDS.map(f=>r(live[f])),[g.lat??null,g.lon??null,r(g.alt),r(g.speed),r(g.heading),r(motion.x),r(motion.y),r(motion.z)]));
   rec.n++;if(rec.n%5===0)rec.spark.push([Math.round(sp??0),Math.round(rpm)]);
   if(rec.buf.length>=CHUNK)flushChunk(rec);
 }
@@ -641,7 +625,7 @@ async function ghPut(path,content,message){
   const r=await fetch(url,{method:'PUT',headers:{...H,'Content-Type':'application/json'},body:JSON.stringify({message,content:b64(content),...(sha?{sha}:{})})});
   if(!r.ok)throw new Error('GitHub '+r.status+(r.status===401?' (key not accepted)':r.status===404?' (repo not found, or the key can’t see it)':r.status===403?' (key lacks write permission)':''));
 }
-let syncing=false;
+let syncing=false,syncAgain=false;
 async function syncTrip(t){
   const csv=await tripCsv(t.id);const meta={...t};delete meta.state;delete meta.spark;
   const dir='trips/'+t.id.slice(0,4)+'/'+t.id.slice(4,6);
@@ -650,20 +634,20 @@ async function syncTrip(t){
   t.synced=true;await put('trips',t);
 }
 async function syncPending(force){
-  if(!gh.token||syncing)return;syncing=true;
+  if(!gh.token)return;if(syncing){syncAgain=true;return;}syncing=true;syncAgain=false;
   try{const list=(await getAll('trips')).filter(t=>!t.open&&!t.demo&&(force||!t.synced)).sort((a,b)=>a.start-b.start);
     if(!list.length){ghStatus('All trips are already sent.','ok');return;}
     let n=0;for(const t of list){ghStatus(`Sending ${++n} of ${list.length}…`);await syncTrip(t);}
     ghStatus(`Sent ${list.length} trip${list.length>1?'s':''} · ${new Date().toLocaleTimeString('ro-RO',{hour:'2-digit',minute:'2-digit'})}`,'ok');renderTrips();
   }catch(e){ghStatus('Couldn’t send: '+e.message,'bad');log('Sync: '+e.message);}
-  finally{syncing=false;}
+  finally{syncing=false;if(syncAgain)syncPending();}
 }
 $('btnGhSave').onclick=()=>{const tok=$('ghToken').value.trim();gh.repo=$('ghRepo').value.trim()||gh.repo;store('golf-gh-repo',gh.repo);
   if(tok&&!tok.startsWith('••')){gh.token=tok;store('golf-gh-token',tok);$('ghToken').value='••••••••';}
   ghStatus(gh.token?'Key saved. Sending…':'Paste a key first.',gh.token?'':'warn');if(gh.token)syncPending();};
 $('btnGhSync').onclick=()=>syncPending(true);
 window.addEventListener('online',()=>syncPending());
-async function endTripNow(){const t=rec||paused;rec=null;paused=null;await closeTrip(t);renderTripState();}
+async function endTripNow(){const t=rec||paused;rec=null;paused=null;await closeTrip(t);renderTripState(true);}
 // After a reload: pick up a trip that paused recently, close older ones.
 async function reviveTrips(){
   const open=(await getAll('trips')).filter(t=>t.open);
@@ -671,7 +655,7 @@ async function reviveTrips(){
     if(Date.now()-t.end<PAUSE_MAX&&t.state&&!paused){paused={...newTrip(false),...t.state,buf:[],last:t.end};pausedAt=t.end;log('Picked up paused trip '+t.id);}
     else{t.open=false;await put('trips',t);}
   }
-  renderTripState();
+  renderTripState(true);
 }
 function fmt(s){s=Math.round(s||0);const m=Math.floor(s/60);return m>=60?`${Math.floor(m/60)}:${String(m%60).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`:`${m}:${String(s%60).padStart(2,'0')}`;}
 function sparkSvg(sp){
@@ -682,7 +666,7 @@ function sparkSvg(sp){
 async function renderTrips(){
   const saved=(await getAll('trips')).sort((a,b)=>b.start-a.start);const all=demoTrips.concat(saved);
   const el=$('trips');
-  if(!all.length){el.innerHTML='<p class="muted small">No trips yet. Connect, tap Start trip, drive, then tap Stop.</p>';return;}
+  if(!all.length){el.innerHTML='<p class="muted small">No trips yet. Connect the adapter and start the engine: trips record themselves.</p>';return;}
   el.innerHTML=all.map(t=>{const d=new Date(t.start);
     return `<div class="trip"><span class="when">${d.toLocaleDateString('ro-RO',{weekday:'short',day:'numeric',month:'short'})} · ${d.toLocaleTimeString('ro-RO',{hour:'2-digit',minute:'2-digit'})}${t.demo?' <span class="chip">demo, not saved</span>':''}${t.synced?' <span class="chip ok">sent</span>':''}</span>
       <span class="acts">${t.demo?'':`<button class="btn" data-csv="${t.id}">CSV</button><button class="btn" data-share="${t.id}">Share</button>`}</span>
@@ -717,6 +701,10 @@ function tick(){const now=performance.now();derive(now);tripAuto();sampleTrip(Da
 function rpmLimit(c){if(c==null)return null;if(c<40)return 2000;if(c<60)return 2500;if(c<75)return 3000;if(c<85)return 3500;return REDLINE;}
 function boostLimit(c){if(c==null)return null;if(c<50)return 0.4;if(c<70)return 0.7;return null;}
 const pct=(v,max)=>Math.max(0,Math.min(100,v/max*100));
+// Write to the page only when the value changes: fewer repaints, smoother on the phone.
+const shownCache={};
+function put$(id,prop,val){const k=id+'.'+prop;if(shownCache[k]===val)return;shownCache[k]=val;const el=$(id);
+  if(prop==='text')el.textContent=val;else if(prop==='html')el.innerHTML=val;else if(prop==='class')el.className=val;else if(prop==='hidden')el.hidden=val;else el.style[prop]=val;}
 // Turbo heat: builds only from real boost while moving, fades over a couple of minutes.
 let heat=0,heatT=null,lowSince=null,coolUntil=null,coolTotal=0;
 function turboHeat(now){
@@ -729,7 +717,7 @@ function turboHeat(now){
   if(!idling||r<=400)coolUntil=null;
   if(coolUntil!=null&&now>=coolUntil){coolUntil=null;heat=0;}
 }
-function setTile(id,state){const el=$(id);el.className='tile'+(state?' s-'+state:'');}
+function setTile(id,state){put$(id,'class','tile'+(state?' s-'+state:''));}
 function updateCockpit(now){
   const c=live.coolant,r=live.rpm,b=live.boost,ld=live.load??0,sp=live.speed;
   const lim=rpmLimit(c),warm=c!=null&&c>=80,L=lim??REDLINE;
@@ -739,17 +727,17 @@ function updateCockpit(now){
     if(r>L)rs='hot';else if(r>L*0.88)rs='warn';else if(r<1300&&ld>70&&(sp??0)>5)rs='warn';
     else if(!warm&&c!=null)rs='cold';else if(warm&&r>=1500&&r<=2600)rs='ok';
   }
-  setTile('tRpm',rs);$('rpmNum').textContent=r!=null?Math.round(r):'–';
-  $('rpmTag').textContent=lim!=null?'max '+lim:'–';
-  $('rpmFill').style.width=r!=null?pct(r,RPM_MAX)+'%':'0';$('rpmLim').hidden=lim==null;if(lim!=null)$('rpmLim').style.left=pct(lim,RPM_MAX)+'%';
+  setTile('tRpm',rs);put$('rpmNum','text',r!=null?String(Math.round(r)):'–');
+  put$('rpmTag','text',lim!=null?'max '+lim:'–');
+  put$('rpmFill','width',r!=null?pct(r,RPM_MAX)+'%':'0');put$('rpmLim','hidden',lim==null);if(lim!=null)put$('rpmLim','left',pct(lim,RPM_MAX)+'%');
   // Speed: GPS when fresh, else the car
   const gpsOk=gps.speed!=null&&gps.at&&now-gps.at<4000;
   const v=gpsOk?gps.speed:sp;
-  $('spdNum').innerHTML=(v!=null?Math.round(v):'–')+'<small>km/h</small>';$('spdSrc').textContent=gpsOk?'GPS':(sp!=null?'car':'–');
+  put$('spdNum','html',(v!=null?Math.round(v):'–')+'<small>km/h</small>');put$('spdSrc','text',gpsOk?'GPS':(sp!=null?'car':'–'));
   // Coolant
   if(c!=null){const ph=c<60?'cold':c<80?'warm':c<=105?'ok':'hot';setTile('tCool',ph);
-    $('cNum').innerHTML=Math.round(c)+'<small>°C</small>';$('cTag').textContent={cold:'cold',warm:'warming',ok:'ready',hot:'hot'}[ph];$('cFill').style.width=pct(c-20,90)+'%';}
-  else{setTile('tCool','');$('cNum').innerHTML='–<small>°C</small>';$('cTag').textContent='–';$('cFill').style.width='0';}
+    put$('cNum','html',Math.round(c)+'<small>°C</small>');put$('cTag','text',{cold:'cold',warm:'warming',ok:'ready',hot:'hot'}[ph]);put$('cFill','width',pct(c-20,90)+'%');}
+  else{setTile('tCool','');put$('cNum','html','–<small>°C</small>');put$('cTag','text','–');put$('cFill','width','0');}
   // Turbo
   const bl=boostLimit(c);
   if(b!=null){const bb=Math.max(0,b);let st='',w='off';
@@ -758,20 +746,19 @@ function updateCockpit(now){
     else if(bb>=0.15){st='ok';w='on';}
     if(ld>90&&(r??0)>2000&&(r??0)<3800&&bb<0.6){lowSince=lowSince??now;if(now-lowSince>3000){st='warn';w='low';}}else lowSince=null;
     if(bl!=null&&st!=='hot')w='max '+bl.toFixed(1);
-    setTile('tTurbo',st);$('bNum').innerHTML=bb.toFixed(2)+'<small>bar</small>';$('bTag').textContent=w;$('bFill').style.width=pct(bb,1.4)+'%';}
-  else{setTile('tTurbo','');$('bNum').innerHTML='–<small>bar</small>';$('bTag').textContent='–';$('bFill').style.width='0';}
-  $('bLim').hidden=bl==null;if(bl!=null)$('bLim').style.left=pct(bl,1.4)+'%';
+    setTile('tTurbo',st);put$('bNum','html',bb.toFixed(2)+'<small>bar</small>');put$('bTag','text',w);put$('bFill','width',pct(bb,1.4)+'%');}
+  else{setTile('tTurbo','');put$('bNum','html','–<small>bar</small>');put$('bTag','text','–');put$('bFill','width','0');}
+  put$('bLim','hidden',bl==null);if(bl!=null)put$('bLim','left',pct(bl,1.4)+'%');
   // Cool-down
-  const left=coolUntil!=null?Math.max(0,(coolUntil-now)/1000):0;$('cool').hidden=!left;
-  if(left){$('coolT').textContent=Math.floor(left/60)+':'+String(Math.ceil(left)%60).padStart(2,'0');$('coolArc').setAttribute('stroke-dashoffset',String(226.2*(1-left/coolTotal)));}
+  const left=coolUntil!=null?Math.max(0,(coolUntil-now)/1000):0;put$('cool','hidden',!left);
+  if(left){put$('coolT','text',Math.floor(left/60)+':'+String(Math.ceil(left)%60).padStart(2,'0'));$('coolArc').setAttribute('stroke-dashoffset',String(226.2*(1-left/coolTotal)));}
   // Strip
-  if(live.l100!=null){$('kCons').textContent='Now L/100';$('mCons').textContent=Math.min(live.l100,99).toFixed(1);}
-  else{$('kCons').textContent='Now L/h';$('mCons').textContent=live.lph!=null?live.lph.toFixed(1):'–';}
+  if(live.l100!=null){put$('kCons','text','Now L/100');put$('mCons','text',Math.min(live.l100,99).toFixed(1));}
+  else{put$('kCons','text','Now L/h');put$('mCons','text',live.lph!=null?live.lph.toFixed(1):'–');}
   const t=rec||paused;
-  $('mAvg').textContent=t&&t.km>0.3?(t.fuel/t.km*100).toFixed(1):'–';$('mKm').textContent=t?t.km.toFixed(1):'–';
-  $('mVolt').textContent=live.volt!=null?live.volt.toFixed(1):'–';$('mVolt').className='v'+(live.volt!=null&&((r??0)>500?live.volt<13.2:live.volt<12.2)?' warn':'');
-  $('mIat').textContent=live.iat!=null?Math.round(live.iat):'–';
-  if(rec)renderTripState();
+  put$('mAvg','text',t&&t.km>0.3?(t.fuel/t.km*100).toFixed(1):'–');put$('mKm','text',t?t.km.toFixed(1):'–');
+  put$('mVolt','text',live.volt!=null?live.volt.toFixed(1):'–');put$('mVolt','class','v'+(live.volt!=null&&((r??0)>500?live.volt<13.2:live.volt<12.2)?' warn':''));
+  put$('mIat','text',live.iat!=null?String(Math.round(live.iat)):'–');
 }
 
 // =============== demo ===============
@@ -781,7 +768,7 @@ function toggleDemo(){
   if(demo){$('driveNote').textContent='Demo: invented values, not your car.';dT=0;live.coolant=18;live.iat=12;live.volt=14.2;supported=new Set(['0C','0D','0B','04','10','05','0F','42','11']);
     demoTimer=setInterval(()=>{dT+=0.25;const c=Math.max(0,Math.sin(dT/12)),acc=Math.max(0,Math.cos(dT/12));live.speed=Math.round(c*95);
       live.rpm=830+c*1700+acc*900*(c>0.1?1:0)+Math.random()*30;live.load=18+acc*60*(c>0.05?1:0)+c*10;live.map=99+acc*95*(c>0.05?1:0)+c*20;live.maf=8+live.load*0.6;live.coolant=Math.min(92,live.coolant+0.35);live.iat=12+c*8;gps={speed:live.speed*1.02,at:performance.now()};tick();},250);}
-  else{clearInterval(demoTimer);const t=rec||paused;rec=null;paused=null;if(t)closeTrip(t);for(const k in live)delete live[k];supported=new Set();updateCockpit(performance.now());renderTripState();$('driveNote').textContent='';if(connected)poll();}
+  else{clearInterval(demoTimer);const t=rec||paused;rec=null;paused=null;if(t)closeTrip(t);for(const k in live)delete live[k];supported=new Set();updateCockpit(performance.now());renderTripState(true);$('driveNote').textContent='';if(connected)poll();}
 }
 
 // =============== wire up ===============
