@@ -333,6 +333,7 @@ function btProblem(html){const n=$('btNotice');n.hidden=!html;n.innerHTML=html||
 async function connect(){
   if(connected){wantConnected=false;try{device.gatt.disconnect();}catch(e){}return;}
   if(linking){log('Connect tapped while already connecting');return;}
+  parkedSince=null;
   clearTimeout(reconTimer);
   if(!navigator.bluetooth){btProblem('<b>Bluetooth isn’t available here.</b> Use Chrome on Android, with Bluetooth and Location turned on.');return;}
   try{
@@ -404,18 +405,20 @@ async function openLinkInner(){
   await initElm();
 }
 function onDisconnect(){
-  connected=false;chip('chipBt','Adapter lost','warn');$('btnConnect').textContent='Connect adapter';$('btnDtc').disabled=true;
+  connected=false;chip('chipBt',parkedSince?'Car parked':'Adapter lost',parkedSince?'':'warn');$('btnConnect').textContent='Connect adapter';$('btnDtc').disabled=true;
   log('Adapter disconnected');
   for(const k in live)delete live[k];
   if(wantConnected)scheduleReconnect();
 }
 // Keep trying quietly while the page is open: the adapter sleeps when the car is off, and you may walk away and come back.
 let reconTimer=null,reconSince=null;
+let parkedSince=null;   // engine off: we let go of the adapter so it can sleep, and only peek now and then
 function scheduleReconnect(){
   reconSince=reconSince??Date.now();
-  if(Date.now()-reconSince>30*60000){log('Stopped trying to reconnect after 30 min');reconSince=null;wantConnected=false;chip('chipBt','Adapter off');stopGps();try{wake?.release();}catch(e){}tripAuto();return;}
+  const limit=parkedSince?PAUSE_MAX:30*60000;
+  if(Date.now()-(parkedSince??reconSince)>limit){parkedSince=null;log('Stopped trying to reconnect after 30 min');reconSince=null;wantConnected=false;chip('chipBt','Adapter off');stopGps();try{wake?.release();}catch(e){}tripAuto();return;}
   clearTimeout(reconTimer);
-  reconTimer=setTimeout(async()=>{if(connected||!wantConnected)return;autoMode=true;try{await openLink();}catch(e){log('Reconnect: '+e.message);}autoMode=false;if(!connected)scheduleReconnect();else reconSince=null;},8000);
+  reconTimer=setTimeout(async()=>{if(connected||!wantConnected)return;autoMode=true;try{await openLink();}catch(e){log('Reconnect: '+e.message);}autoMode=false;if(!connected)scheduleReconnect();else reconSince=null;},parkedSince?60000:8000);
 }
 let autoMode=false;
 // On open: if Chrome remembers the adapter, connect without asking.
@@ -448,6 +451,11 @@ function payload(r,mode,pid){
   return null;
 }
 async function initElm(){
+  if(parkedSince){
+    const v=await cmd('ATRV',1500);const m=(v||'').match(/(\d+(\.\d+)?)\s*V/i);const volts=m?parseFloat(m[1]):null;
+    if(volts!=null&&volts<13.2){log('Peek: '+volts+' V, engine still off. Letting the adapter sleep.');chip('chipBt','Car parked');try{device.gatt.disconnect();}catch(_){}return;}
+    log('Peek: '+(volts??'?')+' V, engine running again.');parkedSince=null;
+  }
   const savedProto=recall('golf-proto');
   for(const s of ['ATWS','ATE0','ATL0','ATS0','ATH0','ATAT2',savedProto?'ATSP'+savedProto:'ATSP0']){const r=await cmd(s,s==='ATWS'?3000:1500);log(s+' → '+clean(r));}
   let first=await cmd('0100',savedProto?4000:12000);log('0100 → '+clean(first));
@@ -510,7 +518,7 @@ function setLive(k,v){live[k]=v;fresh[k]=performance.now();}
 let suffix='';
 async function readPid(p){const r=await cmd('01'+p+suffix,1200);const b=payload(r,'41',p);if(!b||b.length<P[p].b)return false;setLive(P[p].k,P[p].f(b[0],b[1],b[2],b[3]));return true;}
 async function readVoltage(){const r=await cmd('ATRV',1000);const m=(r||'').match(/(\d+(\.\d+)?)\s*V/i);if(m)setLive('volt',parseFloat(m[1]));}
-let replies=0,hzT=performance.now(),reqMs=0,pollGen=0;
+let replies=0,hzT=performance.now(),reqMs=0,pollGen=0,offSince=null;
 // One question at a time, RPM every other question, and the screen updates after every answer.
 // Order: rpm, speed, rpm, boost, rpm, load, rpm, air flow, rpm, <one slow sensor or battery>
 async function poll(){
@@ -521,7 +529,15 @@ async function poll(){
   const others=FAST.filter(p=>p!=='0C'&&has(p));
   while(connected&&!demo&&gen===pollGen){
     // Ignition off: the adapter stays powered, the ECU goes quiet. Check every 2 s whether the engine is back.
-    if(fresh.rpm==null||performance.now()-fresh.rpm>6000){await readPid('0C');expireStale();tick();if(fresh.rpm==null||performance.now()-fresh.rpm>6000){await new Promise(r=>setTimeout(r,2000));continue;}}
+    if(fresh.rpm==null||performance.now()-fresh.rpm>6000){
+      await readPid('0C');expireStale();tick();
+      if(fresh.rpm==null||performance.now()-fresh.rpm>6000){
+        offSince=offSince??performance.now();
+        // Engine off for a minute and a half: stop talking so the adapter can go to sleep and spare the battery.
+        if(performance.now()-offSince>90000){log('Engine off for 90 s: releasing the adapter so it can sleep');parkedSince=Date.now();offSince=null;try{device.gatt.disconnect();}catch(_){}return;}
+        await new Promise(r=>setTimeout(r,2000));continue;}
+    }
+    offSince=null;
     const t0=performance.now();
     if(step%2===0&&has('0C'))await readPid('0C');
     else{const k=(step>>1)%(others.length+1);
