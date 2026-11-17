@@ -112,7 +112,7 @@ input[type=number]{background:var(--panel2);border:1px solid var(--line);color:v
 <body>
 <div class="app">
   <div class="top">
-    <div class="brand">Golf Logbook<small>1.9 TDI BLS · v16</small></div>
+    <div class="brand">Golf Logbook<small>1.9 TDI BLS · v17</small></div>
     <div class="chips">
       <span class="chip" id="chipBt">Adapter off</span>
       <span class="chip" id="chipGps">GPS off</span>
@@ -160,7 +160,7 @@ input[type=number]{background:var(--panel2);border:1px solid var(--line);color:v
           <div><span class="k">Trip L/100</span><span class="v" id="mAvg">–</span></div>
           <div><span class="k">Trip km</span><span class="v" id="mKm">–</span></div>
           <div><span class="k">Battery V</span><span class="v" id="mVolt">–</span></div>
-          <div><span class="k">Outside °C</span><span class="v" id="mIat">–</span></div>
+          <div><span class="k">Trip time</span><span class="v" id="mIat">–</span></div>
         </div>
       </div>
       <div class="tripbar"><span class="chip" id="tripState">No trip</span><span class="muted small" id="tripInfo"></span></div>
@@ -869,7 +869,7 @@ function updateCockpit(now){
   const t=rec||paused;
   put$('mAvg','text',t&&t.km>0.3?(t.fuel/t.km*100).toFixed(1):'–');put$('mKm','text',t?t.km.toFixed(1):'–');
   put$('mVolt','text',live.volt!=null?live.volt.toFixed(1):'–');put$('mVolt','class','v'+(live.volt!=null&&((r??0)>500?live.volt<13.2:live.volt<12.2)?' warn':''));
-  put$('mIat','text',weather.t!=null?String(Math.round(weather.t)):'–');
+  put$('mIat','text',t?fmt(t.engineS||0):'–');
 }
 
 // =============== demo ===============
