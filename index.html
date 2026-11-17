@@ -1,0 +1,631 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0b0e11">
+<title>Golf Logbook</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* One dark cockpit look on purpose: this is used in a car, often at night. */
+:root{
+  color-scheme:dark;
+  --bg:#0b0e11; --panel:#12171c; --panel2:#171d23; --line:#242d35; --fg:#e8edf0; --muted:#83919c; --dim:#4a5661;
+  --accent:#ff7a3d; --accent-fg:#1a0d06; --ok:#3fc27a; --cool:#4aa8ff; --warn:#f0b03c; --bad:#ff5a4a;
+  --display:"Barlow Semi Condensed","Arial Narrow",system-ui,sans-serif;
+  --body:"Inter",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{background:var(--bg);color:var(--fg);font-family:var(--body);font-size:15px;line-height:1.45;-webkit-tap-highlight-color:transparent}
+.app{min-height:100%;display:flex;flex-direction:column;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+.top{display:flex;align-items:center;justify-content:space-between;gap:10px;padding-block:10px;padding-left:max(14px,env(safe-area-inset-left,0px));padding-right:max(14px,env(safe-area-inset-right,0px));border-bottom:1px solid var(--line);flex-wrap:wrap}
+.brand{font-family:var(--display);font-weight:700;font-size:22px;letter-spacing:.02em}
+.brand small{font-family:var(--mono);font-weight:400;font-size:11px;color:var(--muted);margin-left:8px;letter-spacing:0}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{font-family:var(--mono);font-size:11px;padding:3px 8px;border-radius:999px;border:1px solid var(--line);color:var(--muted);white-space:nowrap}
+.chip.ok{color:var(--ok);border-color:currentColor}.chip.warn{color:var(--warn);border-color:currentColor}.chip.bad{color:var(--bad);border-color:currentColor}.chip.rec{color:#fff;background:var(--bad);border-color:var(--bad)}
+nav{display:flex;gap:4px}
+nav button{background:none;border:0;color:var(--muted);font:600 14px var(--body);padding:8px 12px;border-radius:8px;min-height:40px;cursor:pointer}
+nav button[aria-current="true"]{color:var(--fg);background:var(--panel2)}
+main{flex:1;padding-block:12px 28px;padding-left:max(14px,env(safe-area-inset-left,0px));padding-right:max(14px,env(safe-area-inset-right,0px))}
+.view[hidden]{display:none!important}
+button.btn{font:600 15px var(--body);padding:11px 16px;border-radius:10px;border:1px solid var(--line);background:var(--panel2);color:var(--fg);cursor:pointer;min-height:46px}
+button.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-fg)}
+button.btn.recording{background:var(--bad);border-color:var(--bad);color:#fff}
+button.btn:disabled{opacity:.4;cursor:not-allowed}
+button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.notice{border:1px solid var(--line);border-left:3px solid var(--warn);background:var(--panel);padding:10px 12px;border-radius:8px;font-size:14px;margin-bottom:12px}
+.notice.bad{border-left-color:var(--bad)}
+h2{font-family:var(--display);font-weight:600;font-size:14px;text-transform:uppercase;letter-spacing:.14em;color:var(--muted);margin:0 0 10px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px}
+.muted{color:var(--muted)}.small{font-size:13px}.mono{font-family:var(--mono)}
+
+/* ---- Drive cluster ---- */
+.cluster{display:grid;gap:10px;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);grid-template-areas:"main side" "strip strip"}
+.dial{grid-area:main;background:radial-gradient(ellipse at 50% 60%,#151b21 0%,var(--bg) 75%);border:1px solid var(--line);border-radius:18px;position:relative;aspect-ratio:1.25;max-width:100%}
+.dial canvas{width:100%;height:100%;display:block}
+.side{grid-area:side;display:grid;grid-template-columns:1fr 1fr;gap:8px;align-content:start}
+.strip{grid-area:strip;display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px}
+.g{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:8px 10px;min-width:0;display:flex;flex-direction:column}
+.g .k{font-size:10.5px;text-transform:uppercase;letter-spacing:.12em;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.g .v{font-family:var(--display);font-weight:600;font-size:28px;line-height:1.05;font-variant-numeric:tabular-nums;white-space:nowrap}
+.g .u{font-family:var(--mono);font-size:10.5px;color:var(--dim)}
+.g.wide{grid-column:span 2}
+.g .meter{height:5px;border-radius:3px;background:var(--line);overflow:hidden;margin-top:6px}
+.g .meter i{display:block;height:100%;width:0;background:var(--accent);transition:width .25s linear}
+.g.na .v{color:var(--dim)}
+.hint{grid-column:span 2;font-size:13px;padding:8px 10px;border-radius:10px;border:1px solid var(--line);color:var(--muted);min-height:38px}
+.hint.cold{color:var(--cool);border-color:color-mix(in srgb,var(--cool) 40%,transparent)}
+.hint.good{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 40%,transparent)}
+.hint.warn{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 40%,transparent)}
+.gbox{aspect-ratio:1;max-height:110px}
+.controls{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+@media (orientation:landscape) and (min-width:700px){
+  .cluster{grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);}
+}
+@media (max-width:640px){
+  .cluster{grid-template-columns:1fr;grid-template-areas:"main" "side" "strip"}
+  .strip{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .g .v{font-size:24px}
+}
+@media (orientation:landscape) and (max-height:600px){
+  .cluster{grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);grid-template-areas:"main side" "main strip"}
+  .dial{aspect-ratio:auto;height:calc(100dvh - 120px);min-height:240px}
+  .strip{grid-template-columns:repeat(4,minmax(0,1fr))}
+  .side{grid-template-columns:repeat(3,minmax(0,1fr))}.g.wide,.hint{grid-column:span 3}
+  .g .v{font-size:21px}
+}
+body.drive-full .top,body.drive-full nav{display:none}
+body.drive-full main{padding-top:8px}
+
+/* ---- Trips ---- */
+.trip{border-top:1px solid var(--line);padding:12px 0;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 10px}
+.trip:first-child{border-top:0}
+.trip .when{font-weight:600}
+.trip .meta{color:var(--muted);font-family:var(--mono);font-size:12px;font-variant-numeric:tabular-nums}
+.trip .acts{grid-row:span 2;display:flex;gap:6px;align-items:center}
+.trip .acts button{padding:7px 10px;min-height:36px;font-size:13px}
+.spark{grid-column:1/-1;width:100%;height:56px;display:block}
+.kv{display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 14px;font-size:14px}
+.kv dt{color:var(--muted)}.kv dd{margin:0;font-family:var(--mono);word-break:break-all}
+.pids{display:flex;flex-wrap:wrap;gap:6px}
+.log{font-family:var(--mono);font-size:11px;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px;max-height:300px;overflow:auto;white-space:pre-wrap;word-break:break-all}
+.dtc{font-family:var(--mono);font-weight:600;color:var(--warn)}
+label.field{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted)}
+input[type=number]{background:var(--panel2);border:1px solid var(--line);color:var(--fg);border-radius:8px;padding:10px;font:500 15px var(--mono);width:9em}
+@media (prefers-reduced-motion:reduce){.g .meter i{transition:none}}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="top">
+    <div class="brand">Golf Logbook<small>1.9 TDI BLS</small></div>
+    <div class="chips">
+      <span class="chip" id="chipBt">Adapter off</span>
+      <span class="chip" id="chipGps">GPS off</span>
+      <span class="chip" id="chipHz" hidden>0 Hz</span>
+      <span class="chip rec" id="chipRec" hidden>REC</span>
+    </div>
+    <nav>
+      <button data-view="drive" aria-current="true">Drive</button>
+      <button data-view="trips">Trips</button>
+      <button data-view="car">Car</button>
+    </nav>
+  </div>
+
+  <main>
+    <!-- DRIVE -->
+    <section class="view" id="view-drive">
+      <div class="notice bad" id="btNotice" hidden></div>
+      <div class="cluster">
+        <div class="dial"><canvas id="dial"></canvas></div>
+        <div class="side">
+          <div class="g wide" id="g_cons"><span class="k" id="consLabel">Consumption now</span><span class="v" id="v_cons">–</span><span class="u" id="u_cons">L/100 km</span><div class="meter"><i id="m_cons"></i></div></div>
+          <div class="g" id="g_boost"><span class="k">Boost</span><span class="v" id="v_boost">–</span><span class="u">bar</span><div class="meter"><i id="m_boost"></i></div></div>
+          <div class="g" id="g_coolant"><span class="k">Coolant</span><span class="v" id="v_coolant">–</span><span class="u">°C</span><div class="meter"><i id="m_coolant"></i></div></div>
+          <div class="g" id="g_load"><span class="k">Load</span><span class="v" id="v_load">–</span><span class="u">%</span><div class="meter"><i id="m_load"></i></div></div>
+          <div class="g" id="g_power"><span class="k">Power est.</span><span class="v" id="v_power">–</span><span class="u">hp</span><div class="meter"><i id="m_power"></i></div></div>
+          <div class="hint" id="hint">Connect the adapter with the ignition on.</div>
+        </div>
+        <div class="strip">
+          <div class="g"><span class="k">Trip</span><span class="v" id="v_km">0.0</span><span class="u">km</span></div>
+          <div class="g"><span class="k">Time</span><span class="v" id="v_time">0:00</span><span class="u">min</span></div>
+          <div class="g"><span class="k">Trip avg</span><span class="v" id="v_avg">–</span><span class="u">L/100 km</span></div>
+          <div class="g"><span class="k">Fuel used</span><span class="v" id="v_fuel">0.00</span><span class="u">L</span></div>
+          <div class="g" id="g_iat"><span class="k">Intake air</span><span class="v" id="v_iat">–</span><span class="u">°C</span></div>
+          <div class="g" id="g_volt"><span class="k">Voltage</span><span class="v" id="v_volt">–</span><span class="u">V</span></div>
+          <div class="g" id="g_maf"><span class="k">Air flow</span><span class="v" id="v_maf">–</span><span class="u">g/s</span></div>
+          <div class="g"><span class="k">Accel</span><span class="v" id="v_acc">–</span><span class="u">g</span></div>
+          <div class="g"><span class="k">Altitude</span><span class="v" id="v_alt">–</span><span class="u">m</span></div>
+          <div class="g"><span class="k">Idle</span><span class="v" id="v_idle">0:00</span><span class="u">min this trip</span></div>
+          <div class="g"><span class="k">Above 2000</span><span class="v" id="v_hot">0:00</span><span class="u">min, DPF-friendly</span></div>
+          <div class="g"><span class="k">Max boost</span><span class="v" id="v_maxboost">–</span><span class="u">bar this trip</span></div>
+        </div>
+      </div>
+      <div class="controls">
+        <button class="btn primary" id="btnConnect">Connect adapter</button>
+        <button class="btn" id="btnRec" disabled>Start trip</button>
+        <button class="btn" id="btnFull">Full screen</button>
+        <button class="btn" id="btnDemo">Demo</button>
+      </div>
+      <p class="muted small" id="driveNote">Numbers marked “est.” are calculated from the engine data, not measured directly.</p>
+    </section>
+
+    <!-- TRIPS -->
+    <section class="view" id="view-trips" hidden>
+      <div class="panel">
+        <h2>Trips</h2>
+        <div id="trips"><p class="muted small">No trips yet. Connect, tap Start trip, drive, then tap Stop.</p></div>
+      </div>
+      <div class="panel">
+        <h2>Fuel estimate calibration</h2>
+        <p class="small muted">The ECU doesn’t report fuel use, so it’s estimated from load and RPM. After a full tank, compare litres pumped with what the app estimated and set the correction here.</p>
+        <div class="row"><label class="field" for="calib">Correction factor<input type="number" id="calib" step="0.01" min="0.5" max="2" value="1.00"></label></div>
+      </div>
+      <div class="row"><button class="btn" id="btnExportAll">Export all trips (JSON)</button></div>
+    </section>
+
+    <!-- CAR -->
+    <section class="view" id="view-car" hidden>
+      <div class="panel">
+        <h2>Vehicle</h2>
+        <dl class="kv" id="vehicle"><dt>Status</dt><dd>Connect to read the car.</dd></dl>
+      </div>
+      <div class="panel">
+        <h2>Fault codes</h2>
+        <p class="small muted">Read-only. This app never clears codes.</p>
+        <div class="row"><button class="btn" id="btnDtc" disabled>Read fault codes</button></div>
+        <div id="dtcOut" class="small" style="margin-top:10px"></div>
+      </div>
+      <div class="panel">
+        <h2>Readiness monitors</h2>
+        <div id="monitors" class="small muted">Connect to read.</div>
+      </div>
+      <div class="panel">
+        <h2>Sensors the ECU reports</h2>
+        <div id="pidOut" class="pids"><span class="muted small">Connect to see.</span></div>
+      </div>
+      <div class="panel">
+        <h2>Adapter log</h2>
+        <div class="row" style="margin-bottom:8px"><button class="btn" id="btnCopyLog">Copy log</button></div>
+        <div class="log" id="log"></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script>
+(() => {
+'use strict';
+// =============== Standard OBD-II mode 01 decoders ===============
+// k: field name in logs, n: label, u: unit, f: decoder over data bytes, b: byte count
+const P = {
+  '04':{k:'load',n:'Engine load',u:'%',b:1,f:a=>a*100/255},
+  '05':{k:'coolant',n:'Coolant temp',u:'°C',b:1,f:a=>a-40},
+  '06':{k:'stft1',n:'Short fuel trim B1',u:'%',b:1,f:a=>(a-128)*100/128},
+  '07':{k:'ltft1',n:'Long fuel trim B1',u:'%',b:1,f:a=>(a-128)*100/128},
+  '0A':{k:'fuelp',n:'Fuel pressure',u:'kPa',b:1,f:a=>a*3},
+  '0B':{k:'map',n:'Manifold pressure',u:'kPa',b:1,f:a=>a},
+  '0C':{k:'rpm',n:'Engine speed',u:'rpm',b:2,f:(a,b)=>(a*256+b)/4},
+  '0D':{k:'speed',n:'Vehicle speed',u:'km/h',b:1,f:a=>a},
+  '0E':{k:'timing',n:'Timing advance',u:'°',b:1,f:a=>a/2-64},
+  '0F':{k:'iat',n:'Intake air temp',u:'°C',b:1,f:a=>a-40},
+  '10':{k:'maf',n:'Air flow (MAF)',u:'g/s',b:2,f:(a,b)=>(a*256+b)/100},
+  '11':{k:'throttle',n:'Throttle position',u:'%',b:1,f:a=>a*100/255},
+  '1F':{k:'runtime',n:'Run time since start',u:'s',b:2,f:(a,b)=>a*256+b},
+  '21':{k:'milkm',n:'Distance with MIL on',u:'km',b:2,f:(a,b)=>a*256+b},
+  '22':{k:'railrel',n:'Fuel rail pressure (rel.)',u:'kPa',b:2,f:(a,b)=>(a*256+b)*0.079},
+  '23':{k:'rail',n:'Fuel rail pressure',u:'bar',b:2,f:(a,b)=>(a*256+b)*10/100},
+  '24':{k:'lambda',n:'O2 sensor 1 lambda',u:'λ',b:4,f:(a,b)=>(a*256+b)*2/65536},
+  '2C':{k:'egrcmd',n:'Commanded EGR',u:'%',b:1,f:a=>a*100/255},
+  '2D':{k:'egrerr',n:'EGR error',u:'%',b:1,f:a=>a*100/128-100},
+  '2F':{k:'fuellvl',n:'Fuel level',u:'%',b:1,f:a=>a*100/255},
+  '30':{k:'warmups',n:'Warm-ups since codes cleared',u:'',b:1,f:a=>a},
+  '31':{k:'clrkm',n:'Distance since codes cleared',u:'km',b:2,f:(a,b)=>a*256+b},
+  '33':{k:'baro',n:'Barometric pressure',u:'kPa',b:1,f:a=>a},
+  '34':{k:'lambda1c',n:'O2 sensor 1 lambda (current)',u:'λ',b:4,f:(a,b)=>(a*256+b)*2/65536},
+  '3C':{k:'egt1',n:'Catalyst temp B1S1',u:'°C',b:2,f:(a,b)=>(a*256+b)/10-40},
+  '42':{k:'volt',n:'Module voltage',u:'V',b:2,f:(a,b)=>(a*256+b)/1000},
+  '43':{k:'absload',n:'Absolute load',u:'%',b:2,f:(a,b)=>(a*256+b)*100/255},
+  '44':{k:'lambdacmd',n:'Commanded lambda',u:'λ',b:2,f:(a,b)=>(a*256+b)*2/65536},
+  '45':{k:'relthr',n:'Relative throttle',u:'%',b:1,f:a=>a*100/255},
+  '46':{k:'ambient',n:'Outside air temp',u:'°C',b:1,f:a=>a-40},
+  '47':{k:'thrB',n:'Throttle position B',u:'%',b:1,f:a=>a*100/255},
+  '49':{k:'pedalD',n:'Accelerator pedal D',u:'%',b:1,f:a=>a*100/255},
+  '4A':{k:'pedalE',n:'Accelerator pedal E',u:'%',b:1,f:a=>a*100/255},
+  '4C':{k:'thrcmd',n:'Commanded throttle',u:'%',b:1,f:a=>a*100/255},
+  '4D':{k:'milmin',n:'Time with MIL on',u:'min',b:2,f:(a,b)=>a*256+b},
+  '4E':{k:'clrmin',n:'Time since codes cleared',u:'min',b:2,f:(a,b)=>a*256+b},
+  '5A':{k:'pedalrel',n:'Relative pedal',u:'%',b:1,f:a=>a*100/255},
+  '5C':{k:'oil',n:'Oil temp',u:'°C',b:1,f:a=>a-40},
+  '5E':{k:'fuelrate',n:'Fuel rate',u:'L/h',b:2,f:(a,b)=>(a*256+b)/20},
+  '61':{k:'tqdemand',n:'Driver demand torque',u:'%',b:1,f:a=>a-125},
+  '62':{k:'tqactual',n:'Actual torque',u:'%',b:1,f:a=>a-125},
+  '63':{k:'tqref',n:'Reference torque',u:'Nm',b:2,f:(a,b)=>a*256+b},
+};
+const FAST=['0C','0D','0B','04','10'];
+const ONCE=['1C','30','31','21','4D','4E','63'];
+const NAMES_ONLY={'01':'Monitor status','03':'Fuel system status','13':'O2 sensors present','1C':'OBD standard','41':'Monitors this drive cycle','51':'Fuel type'};
+const BLE_SERVICES=['000018f0-0000-1000-8000-00805f9b34fb','0000fff0-0000-1000-8000-00805f9b34fb','0000ffe0-0000-1000-8000-00805f9b34fb','e7810a71-73ae-499d-8c15-faa9aef0c3f2','0000ffb0-0000-1000-8000-00805f9b34fb','0000beef-0000-1000-8000-00805f9b34fb'];
+
+// Engine facts for estimates (1.9 TDI BLS, 77 kW)
+const FUEL_K=0.005;        // L/h per rpm at 100% load: ~20 L/h at full load 4000 rpm
+const DIESEL_DENS=0.832;   // kg/L
+const LHV=42.6;            // MJ/kg
+const EFF=0.38;            // rough brake efficiency
+const REDLINE=4500, RPM_MAX=5000;
+
+const $=id=>document.getElementById(id);
+const live={};             // latest values, by field name
+let supported=new Set(), connected=false, demo=false;
+let device=null, rxChar=null, txChar=null, rxBuf='', pending=null, isCan=true, wantConnected=false;
+let baroBase=null, mapAtRest=null;
+let rec=null, gps={}, gpsWatch=null, wake=null, motion={x:null,y:null,z:null};
+let calib=1; try{calib=parseFloat(localStorage.getItem('golf-calib'))||1;}catch(e){}
+$('calib').value=calib.toFixed(2);
+$('calib').onchange=()=>{const v=parseFloat($('calib').value);if(v>0.3&&v<3){calib=v;try{localStorage.setItem('golf-calib',String(v));}catch(e){}}};
+
+// =============== log ===============
+const logLines=[];
+function log(s){logLines.push(new Date().toTimeString().slice(0,8)+'  '+s);if(logLines.length>500)logLines.shift();const el=$('log');el.textContent=logLines.join('\n');el.scrollTop=el.scrollHeight;}
+$('btnCopyLog').onclick=async()=>{try{await navigator.clipboard.writeText(logLines.join('\n'));$('btnCopyLog').textContent='Copied';setTimeout(()=>$('btnCopyLog').textContent='Copy log',1500);}catch(e){}};
+function chip(id,text,cls){const c=$(id);c.textContent=text;c.className='chip'+(cls?' '+cls:'');}
+
+// =============== views ===============
+document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('nav button').forEach(x=>x.setAttribute('aria-current',x===b));
+  document.querySelectorAll('.view').forEach(v=>v.hidden=v.id!=='view-'+b.dataset.view);
+  if(b.dataset.view==='trips')renderTrips();
+  sizeDial();
+});
+
+// =============== storage (IndexedDB on this phone) ===============
+let idb=null;
+function openDb(){return new Promise(res=>{try{const r=indexedDB.open('golf-logbook',1);
+  r.onupgradeneeded=()=>{const d=r.result;d.createObjectStore('trips',{keyPath:'id'});d.createObjectStore('chunks',{keyPath:['trip','i']});};
+  r.onsuccess=()=>{idb=r.result;res(idb);};r.onerror=()=>{log('Storage unavailable: '+r.error);res(null);};}catch(e){res(null);}});}
+function put(store,val){return new Promise(res=>{if(!idb)return res(false);try{const t=idb.transaction(store,'readwrite');t.objectStore(store).put(val);t.oncomplete=()=>res(true);t.onerror=()=>{log('Save failed: '+t.error);res(false);};}catch(e){res(false);}});}
+function getAll(store,range){return new Promise(res=>{if(!idb)return res([]);try{const r=idb.transaction(store).objectStore(store).getAll(range);r.onsuccess=()=>res(r.result||[]);r.onerror=()=>res([]);}catch(e){res([]);}});}
+function del(store,key){return new Promise(res=>{if(!idb)return res();const t=idb.transaction(store,'readwrite');t.objectStore(store).delete(key);t.oncomplete=()=>res();});}
+async function tripRows(id){const ch=await getAll('chunks',IDBKeyRange.bound([id,0],[id,1e9]));ch.sort((a,b)=>a.i-b.i);return ch.flatMap(c=>c.rows);}
+
+// =============== Bluetooth / ELM327 ===============
+function btProblem(html){const n=$('btNotice');n.hidden=!html;n.innerHTML=html||'';}
+async function connect(){
+  if(connected){wantConnected=false;try{device.gatt.disconnect();}catch(e){}return;}
+  if(!navigator.bluetooth){btProblem('<b>Bluetooth isn’t available here.</b> Use Chrome on Android, with Bluetooth and Location turned on.');return;}
+  try{
+    chip('chipBt','Choosing…','warn');
+    device=await navigator.bluetooth.requestDevice({acceptAllDevices:true,optionalServices:BLE_SERVICES});
+    device.addEventListener('gattserverdisconnected',onDisconnect);
+    wantConnected=true;await openLink();
+  }catch(e){
+    log('Connect failed: '+e.name+' '+e.message);
+    if(e.name==='NotFoundError'){chip('chipBt','Adapter off');return;}
+    btProblem('<b>Couldn’t connect.</b> '+e.message+' Check the ignition is on and Car Scanner is fully closed, then try again.');
+    chip('chipBt','Error','bad');
+  }
+}
+async function openLink(){
+  chip('chipBt','Connecting…','warn');
+  const server=await device.gatt.connect();
+  rxChar=txChar=null;
+  let services=[];try{services=await server.getPrimaryServices();}catch(e){log('Service list failed: '+e.message);}
+  for(const s of services){
+    let chars=[];try{chars=await s.getCharacteristics();}catch(e){continue;}
+    let rx=null,tx=null;
+    for(const c of chars){const p=c.properties;if(!rx&&(p.notify||p.indicate))rx=c;if(!tx&&(p.write||p.writeWithoutResponse))tx=c;}
+    if(rx&&tx){rxChar=rx;txChar=tx;log('Serial channel on service '+s.uuid);break;}
+  }
+  if(!rxChar)throw new Error('No serial channel found on this device.');
+  await rxChar.startNotifications();
+  rxChar.addEventListener('characteristicvaluechanged',e=>{rxBuf+=new TextDecoder().decode(e.target.value);if(rxBuf.includes('>'))flush();});
+  connected=true;btProblem('');chip('chipBt',device.name||'Adapter','ok');$('btnConnect').textContent='Disconnect';
+  await initElm();
+}
+function onDisconnect(){
+  connected=false;chip('chipBt','Disconnected','bad');$('btnConnect').textContent='Connect adapter';$('btnDtc').disabled=true;
+  log('Adapter disconnected');
+  if(wantConnected){log('Reconnecting…');setTimeout(async()=>{try{await openLink();}catch(e){log('Reconnect failed: '+e.message);chip('chipBt','Lost','bad');}},1500);}
+}
+function flush(){const i=rxBuf.indexOf('>');const chunk=rxBuf.slice(0,i);rxBuf=rxBuf.slice(i+1);if(pending){const p=pending;pending=null;clearTimeout(p.t);p.res(chunk);}}
+async function writeStr(s){const d=new TextEncoder().encode(s+'\r');for(let i=0;i<d.length;i+=20){const part=d.slice(i,i+20);if(txChar.properties.writeWithoutResponse&&txChar.writeValueWithoutResponse)await txChar.writeValueWithoutResponse(part);else await txChar.writeValue(part);}}
+let q=Promise.resolve();
+function cmd(c,timeout=2000){
+  const run=()=>new Promise(async res=>{
+    if(!connected)return res(null);
+    rxBuf='';pending={res,t:setTimeout(()=>{pending=null;res(null);},timeout)};
+    try{await writeStr(c);}catch(e){if(pending){clearTimeout(pending.t);pending=null;}log(c+' write failed: '+e.message);res(null);}
+  });
+  const p=q.then(run);q=p.catch(()=>{});return p;
+}
+const clean=r=>r==null?'(no answer)':r.replace(/SEARCHING\.\.\./g,'').replace(/\s+/g,' ').trim();
+const lines=r=>(r||'').split(/[\r\n]+/).map(s=>s.replace(/\s/g,'').replace(/^[0-9A-F]:/i,'')).filter(Boolean);
+function payload(r,mode,pid){
+  const want=(mode+pid).toUpperCase();
+  for(const l of lines(r)){const L=l.toUpperCase();const i=L.indexOf(want);if(i<0)continue;
+    const hex=L.slice(i+want.length);const out=[];for(let j=0;j+1<hex.length;j+=2)out.push(parseInt(hex.slice(j,j+2),16));if(out.length&&!out.some(isNaN))return out;}
+  return null;
+}
+async function initElm(){
+  for(const s of ['ATZ','ATE0','ATL0','ATS0','ATH0','ATAT2','ATSP0']){const r=await cmd(s,s==='ATZ'?4000:2000);log(s+' → '+clean(r));}
+  const first=await cmd('0100',12000);log('0100 → '+clean(first));
+  const dp=await cmd('ATDPN');log('ATDPN → '+clean(dp));
+  const n=(dp||'').replace(/[^0-9A-C]/gi,'').slice(-1).toUpperCase();isCan=['6','7','8','9','A','B','C'].includes(n);
+  await readSupported(first);
+  await readVehicle();
+  $('btnRec').disabled=false;$('btnDtc').disabled=false;
+  if(!demo)poll();
+}
+async function readSupported(first){
+  supported=new Set();let resp=first;
+  for(const base of [0,0x20,0x40,0x60]){
+    const pid=base.toString(16).padStart(2,'0').toUpperCase();
+    if(base)resp=await cmd('01'+pid,2500);
+    const b=payload(resp,'41',pid);if(!b||b.length<4)break;
+    const bits=(b[0]*16777216)+(b[1]<<16)+(b[2]<<8)+b[3];
+    for(let i=0;i<32;i++)if(Math.floor(bits/2**(31-i))%2)supported.add((base+i+1).toString(16).padStart(2,'0').toUpperCase());
+    if(!supported.has((base+0x20).toString(16).padStart(2,'0').toUpperCase()))break;
+  }
+  log('ECU supports: '+[...supported].join(' '));
+  const items=[...supported].filter(p=>!['20','40','60','80'].includes(p)).map(p=>P[p]?`<span class="chip ok">${P[p].n}</span>`:`<span class="chip">${NAMES_ONLY[p]||'PID '+p}</span>`);
+  $('pidOut').innerHTML=items.join('')||'<span class="muted small">The ECU listed no sensors. See the adapter log.</span>';
+}
+function hexToAscii(h){let s='';for(let i=0;i+1<h.length;i+=2){const c=parseInt(h.slice(i,i+2),16);if(c>=32&&c<127)s+=String.fromCharCode(c);}return s;}
+async function readVehicle(){
+  const rows=[];
+  const vinR=await cmd('0902',4000);log('0902 → '+clean(vinR));
+  let vin='';
+  if(vinR){const joined=lines(vinR).filter(l=>l.length>3).join('').toUpperCase();const i=joined.indexOf('4902');
+    if(i>=0){let h=joined.slice(i+4);h=isCan?h.slice(2):h.replace(/4902[0-9A-F]{2}/g,'').slice(2);vin=hexToAscii(h).replace(/[^A-HJ-NPR-Z0-9]/g,'').slice(-17);}}
+  rows.push(['VIN',vin||'not reported']);
+  const calR=await cmd('0904',4000);log('0904 → '+clean(calR));
+  if(calR){const joined=lines(calR).filter(l=>l.length>3).join('').toUpperCase();const i=joined.indexOf('4904');if(i>=0){const h=joined.slice(i+4+(isCan?2:2));rows.push(['ECU calibration',hexToAscii(h).trim()||'–']);}}
+  const proto=await cmd('ATDP');rows.push(['Protocol',clean(proto)]);
+  const ver=await cmd('ATI');rows.push(['Adapter',clean(ver)]);
+  for(const p of ONCE){if(!supported.has(p))continue;const r=await cmd('01'+p,1500);const b=payload(r,'41',p);if(!b)continue;
+    if(p==='1C')rows.push(['OBD standard',({6:'EOBD (Europe)',7:'EOBD + OBD-II',8:'EOBD + OBD',9:'EOBD, OBD, OBD-II',1:'OBD-II (CARB)',3:'OBD + OBD-II'})[b[0]]||('type '+b[0])]);
+    else if(P[p]){const v=P[p].f(b[0],b[1]);live[P[p].k]=v;rows.push([P[p].n,Math.round(v)+' '+P[p].u]);}}
+  $('vehicle').innerHTML=rows.map(([k,v])=>`<dt>${k}</dt><dd>${String(v).replace(/</g,'&lt;')}</dd>`).join('');
+  await readMonitors();
+}
+async function readMonitors(){
+  const r=await cmd('0101',2000);const b=payload(r,'41','01');if(!b||b.length<4){$('monitors').textContent='Not reported.';return;}
+  const [A,B,C,D]=b;const mil=!!(A&128),count=A&127,diesel=!!(B&8);
+  const names=diesel?['NMHC catalyst','NOx aftertreatment',null,'Boost pressure',null,'Exhaust gas sensor','Particulate filter (DPF)','EGR / VVT']:['Catalyst','Heated catalyst','Evaporative system','Secondary air','A/C refrigerant','Oxygen sensor','O2 sensor heater','EGR'];
+  const list=[['Misfire',B&1,B&16],['Fuel system',B&2,B&32],['Components',B&4,B&64]];
+  names.forEach((n,i)=>{if(n)list.push([n,C&(1<<i),D&(1<<i)]);});
+  $('monitors').innerHTML=`<p>Engine warning light: <b style="color:${mil?'var(--bad)':'var(--ok)'}">${mil?'ON':'off'}</b> · stored codes: <b>${count}</b> · ${diesel?'diesel':'petrol'} monitors</p>`+
+    '<div class="pids">'+list.filter(x=>x[1]).map(([n,,inc])=>`<span class="chip ${inc?'warn':'ok'}">${n}: ${inc?'not ready':'ready'}</span>`).join('')+'</div>';
+}
+async function readPid(p){const r=await cmd('01'+p,1200);const b=payload(r,'41',p);if(!b||b.length<P[p].b)return;live[P[p].k]=P[p].f(b[0],b[1],b[2],b[3]);}
+let slowIdx=0,cycles=0,hzT=performance.now();
+async function poll(){
+  const slow=[...supported].filter(p=>P[p]&&!FAST.includes(p)&&!ONCE.includes(p));
+  while(connected&&!demo){
+    const t0=performance.now();
+    for(const p of FAST)if(supported.has(p))await readPid(p);
+    if(slow.length){await readPid(slow[slowIdx%slow.length]);slowIdx++;}
+    tick();
+    cycles++;if(performance.now()-hzT>3000){chip('chipHz',(cycles*1000/(performance.now()-hzT)).toFixed(1)+' Hz','ok');$('chipHz').hidden=false;cycles=0;hzT=performance.now();}
+    const dt=performance.now()-t0;if(dt<150)await new Promise(r=>setTimeout(r,150-dt));
+  }
+}
+
+// =============== fault codes ===============
+function parseDtc(r,mode){const codes=[];for(let l of lines(r)){const L=l.toUpperCase();const i=L.indexOf(mode);if(i<0)continue;let h=L.slice(i+2);if(isCan)h=h.slice(2);
+  for(let j=0;j+3<h.length;j+=4){const c=h.slice(j,j+4);if(c==='0000')continue;const a=parseInt(c.slice(0,2),16);codes.push('PCBU'[a>>6]+((a>>4)&3)+c.slice(1));}}return [...new Set(codes)];}
+async function readDtc(){
+  $('dtcOut').textContent='Reading…';
+  const r3=await cmd('03',5000);log('03 → '+clean(r3));const r7=await cmd('07',5000);log('07 → '+clean(r7));
+  if(r3==null){$('dtcOut').textContent='No answer from the ECU. Try with the ignition on.';return;}
+  const stored=parseDtc(r3,'43'),pend=parseDtc(r7,'47');
+  $('dtcOut').innerHTML=(stored.length?'Stored: '+stored.map(c=>`<span class="dtc">${c}</span>`).join(', '):'<span style="color:var(--ok)">No stored engine codes.</span>')+
+    '<br>'+(pend.length?'Pending: '+pend.map(c=>`<span class="dtc">${c}</span>`).join(', '):'<span class="muted">No pending codes.</span>')+
+    ((stored.length||pend.length)?'<br><span class="muted">Send these to Claude before doing anything.</span>':'');
+  await readMonitors();
+}
+
+// =============== derived values ===============
+let lastSpeed=null,lastSpeedT=null,accG=0;
+function derive(now){
+  if(live.baro!=null)baroBase=live.baro;
+  else{ if(live.map!=null&&(live.rpm??0)<50)mapAtRest=live.map;
+        if(mapAtRest!=null)baroBase=mapAtRest;
+        else if(live.map!=null&&(live.rpm??0)>500&&(live.rpm??0)<1000&&(live.load??100)<30)baroBase=baroBase==null?live.map:Math.min(baroBase,live.map); }
+  if(live.map!=null)live.boost=Math.max(-0.2,(live.map-(baroBase??99))/100);
+  // fuel: use ECU fuel rate if reported, else load × rpm estimate
+  if(live.fuelrate!=null&&supported.has('5E'))live.lph=live.fuelrate;
+  else if(live.rpm!=null&&live.load!=null)live.lph=(live.rpm>300?live.load/100*live.rpm*FUEL_K:0)*calib;
+  if(live.lph!=null){
+    live.l100=(live.speed??0)>3?live.lph/live.speed*100:null;
+    const kw=live.lph*DIESEL_DENS/3600*LHV*1000*EFF;   // L/h → kg/s × MJ/kg → kW
+    live.hp=kw*1.341;
+  }
+  if(live.speed!=null){if(lastSpeed!=null){const dt=(now-lastSpeedT)/1000;if(dt>0.05&&dt<3){const a=(live.speed-lastSpeed)/3.6/dt/9.81;accG=accG*0.7+a*0.3;}}lastSpeed=live.speed;lastSpeedT=now;live.accg=accG;}
+}
+
+// =============== trips ===============
+const FIELDS=['rpm','speed','coolant','map','boost','load','maf','iat','throttle','volt','lambda','rail','egrcmd','ambient','oil','fuellvl','lph','l100','hp','accg'];
+const EXTRA=['lat','lon','alt','gpsSpeed','heading','ax','ay','az'];
+const CHUNK=60;
+function tripId(){const d=new Date();const p=n=>String(n).padStart(2,'0');return `${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;}
+function newTrip(isDemo){return {id:tripId(),start:Date.now(),last:Date.now(),buf:[],chunk:0,n:0,km:0,fuel:0,idleS:0,hotS:0,maxRpm:0,maxBoost:0,maxSpeed:0,maxCoolant:-99,warm80:null,coolStart:live.coolant??null,demo:isDemo,spark:[]};}
+async function startTrip(){
+  rec=newTrip(demo);$('btnRec').textContent='Stop trip';$('btnRec').classList.add('recording');$('chipRec').hidden=false;
+  startGps();try{wake=await navigator.wakeLock?.request('screen');}catch(e){}
+  log('Trip started '+rec.id);
+}
+function sampleTrip(now){
+  if(!rec)return;const dt=Math.min(3,(now-rec.last)/1000);rec.last=now;
+  if(live.speed!=null)rec.km+=live.speed*dt/3600;
+  if(live.lph!=null)rec.fuel+=live.lph*dt/3600;
+  const rpm=live.rpm??0;
+  if(rpm>300&&(live.speed??0)<2)rec.idleS+=dt;
+  if(rpm>=2000&&(live.speed??0)>=60)rec.hotS+=dt;
+  rec.maxRpm=Math.max(rec.maxRpm,rpm);rec.maxBoost=Math.max(rec.maxBoost,live.boost??0);rec.maxSpeed=Math.max(rec.maxSpeed,live.speed??0);rec.maxCoolant=Math.max(rec.maxCoolant,live.coolant??-99);
+  if(rec.warm80==null&&(live.coolant??0)>=80)rec.warm80=Math.round((now-rec.start)/1000);
+  const r=v=>v==null||!isFinite(v)?null:Math.round(v*100)/100;
+  rec.buf.push([Math.round((now-rec.start)/100)/10].concat(FIELDS.map(f=>r(live[f])),[gps.lat??null,gps.lon??null,r(gps.alt),r(gps.speed),r(gps.heading),r(motion.x),r(motion.y),r(motion.z)]));
+  rec.n++;if(rec.n%5===0)rec.spark.push([Math.round(live.speed??0),Math.round(rpm)]);
+  if(rec.buf.length>=CHUNK)flushChunk();
+}
+function flushChunk(){if(!rec||!rec.buf.length||rec.demo){if(rec)rec.buf=[];return Promise.resolve();}const rows=rec.buf;rec.buf=[];const t=rec;return put('chunks',{trip:t.id,i:t.chunk++,rows}).then(()=>put('trips',{...summary(t),open:true}));}
+function summary(t){return {id:t.id,start:t.start,end:Date.now(),durationS:Math.round((Date.now()-t.start)/1000),km:+t.km.toFixed(2),fuelL:+t.fuel.toFixed(3),avgL100:t.km>0.5?+(t.fuel/t.km*100).toFixed(2):null,
+  samples:t.n,idleS:Math.round(t.idleS),hotS:Math.round(t.hotS),maxRpm:Math.round(t.maxRpm),maxBoost:+t.maxBoost.toFixed(2),maxSpeed:Math.round(t.maxSpeed),coolantStart:t.coolStart,maxCoolant:t.maxCoolant,warmTo80S:t.warm80,
+  calib,fields:['t'].concat(FIELDS,EXTRA),supported:[...supported],spark:t.spark,demo:t.demo};}
+const demoTrips=[];
+async function stopTrip(){
+  if(!rec)return;const t=rec;$('btnRec').disabled=true;$('btnRec').textContent='Saving…';
+  await flushChunk();const s=summary(t);rec=null;
+  if(t.demo)demoTrips.unshift(s);else await put('trips',s);
+  stopGps();try{await wake?.release();}catch(e){}
+  $('btnRec').textContent='Start trip';$('btnRec').classList.remove('recording');$('btnRec').disabled=!(connected||demo);$('chipRec').hidden=true;
+  log(`Trip saved: ${s.km} km, ${s.samples} samples`);
+}
+function fmt(s){s=Math.round(s||0);const m=Math.floor(s/60);return m>=60?`${Math.floor(m/60)}:${String(m%60).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`:`${m}:${String(s%60).padStart(2,'0')}`;}
+function sparkSvg(sp){
+  if(!sp||sp.length<2)return '';const w=600,h=56,n=sp.length;const maxS=Math.max(60,...sp.map(x=>x[0]));const maxR=Math.max(3000,...sp.map(x=>x[1]));
+  const path=(i,max)=>sp.map((x,j)=>`${(j/(n-1)*w).toFixed(1)},${(h-2-x[i]/max*(h-6)).toFixed(1)}`).join(' ');
+  return `<svg class="spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-label="Speed and RPM over the trip"><polyline points="${path(1,maxR)}" fill="none" stroke="#4a5661" stroke-width="1.5"/><polyline points="${path(0,maxS)}" fill="none" stroke="#ff7a3d" stroke-width="2"/></svg>`;
+}
+async function renderTrips(){
+  const saved=(await getAll('trips')).sort((a,b)=>b.start-a.start);const all=demoTrips.concat(saved);
+  const el=$('trips');
+  if(!all.length){el.innerHTML='<p class="muted small">No trips yet. Connect, tap Start trip, drive, then tap Stop.</p>';return;}
+  el.innerHTML=all.map(t=>{const d=new Date(t.start);
+    return `<div class="trip"><span class="when">${d.toLocaleDateString('ro-RO',{weekday:'short',day:'numeric',month:'short'})} · ${d.toLocaleTimeString('ro-RO',{hour:'2-digit',minute:'2-digit'})}${t.demo?' <span class="chip">demo, not saved</span>':''}</span>
+      <span class="acts">${t.demo?'':`<button class="btn" data-csv="${t.id}">CSV</button><button class="btn" data-share="${t.id}">Share</button>`}</span>
+      <span class="meta">${t.km} km · ${fmt(t.durationS)} · ${t.avgL100!=null?t.avgL100+' L/100 est. · ':''}max ${t.maxRpm} rpm · ${t.maxBoost} bar · idle ${fmt(t.idleS)}${t.warmTo80S!=null?' · 80°C at '+fmt(t.warmTo80S):' · never reached 80°C'}</span>
+      ${sparkSvg(t.spark)}</div>`;}).join('');
+  el.querySelectorAll('[data-csv]').forEach(b=>b.onclick=()=>exportTrip(b.dataset.csv,false));
+  el.querySelectorAll('[data-share]').forEach(b=>b.onclick=()=>exportTrip(b.dataset.share,true));
+}
+async function tripCsv(id){const t=(await getAll('trips')).find(x=>x.id===id);const rows=await tripRows(id);
+  return t.fields.join(',')+'\n'+rows.map(r=>r.map(v=>v==null?'':v).join(',')).join('\n');}
+function saveFile(name,text,type){const blob=new Blob([text],{type});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},2000);return blob;}
+async function exportTrip(id,share){
+  const csv=await tripCsv(id);const name=`golf-trip-${id}.csv`;
+  if(share&&navigator.canShare){const f=new File([csv],name,{type:'text/csv'});if(navigator.canShare({files:[f]})){try{await navigator.share({files:[f],title:name});return;}catch(e){if(e.name==='AbortError')return;}}}
+  saveFile(name,csv,'text/csv');
+}
+$('btnExportAll').onclick=async()=>{const trips=await getAll('trips');const out=[];for(const t of trips)out.push({...t,rows:await tripRows(t.id)});saveFile(`golf-logbook-${tripId()}.json`,JSON.stringify(out),'application/json');};
+
+// =============== phone sensors ===============
+function startGps(){
+  if(!navigator.geolocation){chip('chipGps','No GPS');return;}
+  gpsWatch=navigator.geolocation.watchPosition(p=>{const c=p.coords;gps={lat:+c.latitude.toFixed(6),lon:+c.longitude.toFixed(6),alt:c.altitude,speed:c.speed!=null?c.speed*3.6:null,heading:c.heading};chip('chipGps','GPS ±'+Math.round(c.accuracy)+' m','ok');},
+    e=>{chip('chipGps','GPS denied','warn');log('GPS: '+e.message);},{enableHighAccuracy:true,maximumAge:1000});
+}
+function stopGps(){if(gpsWatch!=null)navigator.geolocation.clearWatch(gpsWatch);gpsWatch=null;chip('chipGps','GPS off');}
+window.addEventListener('devicemotion',e=>{const a=e.acceleration||e.accelerationIncludingGravity;if(a){motion={x:a.x,y:a.y,z:a.z};}});
+
+// =============== main loop: derive, record, draw ===============
+function tick(){const now=performance.now();derive(now);sampleTrip(Date.now());updateTiles();}
+function setTile(k,v,dec,max,warnFn){
+  const vEl=$('v_'+k);if(!vEl)return;const g=vEl.closest('.g');
+  if(v==null||!isFinite(v)){vEl.textContent='–';g&&g.classList.add('na');const m=$('m_'+k);if(m)m.style.width='0';return;}
+  g&&g.classList.remove('na');vEl.textContent=v.toFixed(dec);
+  const m=$('m_'+k);if(m&&max){m.style.width=Math.max(0,Math.min(100,v/max*100))+'%';m.style.background=warnFn?warnFn(v):'var(--accent)';}
+}
+function updateTiles(){
+  if(live.l100!=null){$('consLabel').textContent='Consumption now (est.)';$('u_cons').textContent='L/100 km';setTile('cons',Math.min(live.l100,99),1,20,v=>v<5?'var(--ok)':v<9?'var(--warn)':'var(--bad)');}
+  else{$('consLabel').textContent='Fuel flow now (est.)';$('u_cons').textContent='L/h';setTile('cons',live.lph,2,4);}
+  setTile('boost',live.boost,2,1.4);
+  setTile('coolant',live.coolant,0,110,v=>v<60?'var(--cool)':v<105?'var(--ok)':'var(--bad)');
+  setTile('load',live.load,0,100);setTile('power',live.hp,0,110);
+  setTile('iat',live.iat,0);setTile('volt',live.volt,1);setTile('maf',live.maf,1);setTile('acc',live.accg,2);
+  $('v_alt').textContent=gps.alt!=null?Math.round(gps.alt):'–';
+  if(rec){$('v_km').textContent=rec.km.toFixed(1);$('v_time').textContent=fmt((Date.now()-rec.start)/1000);$('v_fuel').textContent=rec.fuel.toFixed(2);
+    $('v_avg').textContent=rec.km>0.3?(rec.fuel/rec.km*100).toFixed(1):'–';$('v_idle').textContent=fmt(rec.idleS);$('v_hot').textContent=fmt(rec.hotS);$('v_maxboost').textContent=rec.maxBoost.toFixed(2);
+    $('chipRec').textContent='REC '+fmt((Date.now()-rec.start)/1000);}
+  // driving hint
+  const h=$('hint');const c=live.coolant;
+  if(c==null){h.className='hint';h.textContent=connected||demo?'Waiting for engine data…':'Connect the adapter with the ignition on.';}
+  else if(c<60){h.className='hint cold';h.textContent=`Engine cold (${Math.round(c)}°C). Keep it under 2500 rpm and go easy on the boost.`;}
+  else if(c<80){h.className='hint cold';h.textContent=`Warming up (${Math.round(c)}°C). Almost there.`;}
+  else if((live.volt??14)<12.2&&(live.rpm??0)>500){h.className='hint warn';h.textContent=`Voltage low while running (${live.volt.toFixed(1)} V). Check the battery and alternator.`;}
+  else if(rec&&rec.hotS>=600){h.className='hint good';h.textContent='10+ minutes of steady 2000+ rpm this trip. Good conditions for the DPF to clean itself.';}
+  else {h.className='hint good';h.textContent='Engine warm. All normal.';}
+}
+
+// =============== the dial (canvas) ===============
+const cv=$('dial'),ctx=cv.getContext('2d');let W=0,H=0,dpr=1;
+function sizeDial(){const r=cv.getBoundingClientRect();if(!r.width)return;dpr=window.devicePixelRatio||1;W=r.width;H=r.height;cv.width=W*dpr;cv.height=H*dpr;ctx.setTransform(dpr,0,0,dpr,0,0);}
+window.addEventListener('resize',sizeDial);
+const shown={rpm:0,speed:0,boost:0,coolant:0};
+const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const COL={fg:css('--fg'),muted:css('--muted'),dim:css('--dim'),line:css('--line'),accent:css('--accent'),bad:css('--bad'),ok:css('--ok'),cool:css('--cool')};
+function arc(cx,cy,r,a0,a1,color,w){ctx.beginPath();ctx.arc(cx,cy,r,a0,a1);ctx.strokeStyle=color;ctx.lineWidth=w;ctx.lineCap='butt';ctx.stroke();}
+function draw(){
+  requestAnimationFrame(draw);
+  if(!W){sizeDial();if(!W)return;}
+  const ease=(k,t)=>{const v=live[k];if(v!=null&&isFinite(v))shown[k]+=(v-shown[k])*t;};
+  ease('rpm',0.25);ease('speed',0.25);ease('boost',0.25);ease('coolant',0.1);
+  ctx.clearRect(0,0,W,H);
+  const cx=W/2,cy=H*0.52,R=Math.min(W*0.44,H*0.46);
+  const A0=Math.PI*0.75,A1=Math.PI*2.25,span=A1-A0;
+  const rpmA=v=>A0+span*Math.min(1,Math.max(0,v/RPM_MAX));
+  // track, redline
+  arc(cx,cy,R,A0,A1,COL.line,R*0.09);
+  arc(cx,cy,R,rpmA(REDLINE),A1,COL.bad,R*0.09);
+  // band 1500-2500 = diesel sweet spot
+  arc(cx,cy,R*0.885,rpmA(1500),rpmA(2500),COL.ok,R*0.02);
+  // fill
+  const hasRpm=live.rpm!=null;
+  if(hasRpm)arc(cx,cy,R,A0,rpmA(shown.rpm),shown.rpm>REDLINE?COL.bad:COL.accent,R*0.09);
+  // ticks
+  ctx.fillStyle=COL.muted;ctx.font=`600 ${Math.round(R*0.11)}px Barlow Semi Condensed, Arial Narrow, sans-serif`;ctx.textAlign='center';ctx.textBaseline='middle';
+  for(let k=0;k<=RPM_MAX;k+=500){const a=rpmA(k);const r1=R*0.8,r2=k%1000===0?R*0.72:R*0.76;
+    ctx.beginPath();ctx.moveTo(cx+Math.cos(a)*r1,cy+Math.sin(a)*r1);ctx.lineTo(cx+Math.cos(a)*r2,cy+Math.sin(a)*r2);ctx.strokeStyle=k>=REDLINE?COL.bad:COL.dim;ctx.lineWidth=k%1000===0?2.5:1.5;ctx.stroke();
+    if(k%1000===0)ctx.fillText(String(k/1000),cx+Math.cos(a)*R*0.62,cy+Math.sin(a)*R*0.62);}
+  // needle
+  if(hasRpm){const a=rpmA(shown.rpm);ctx.beginPath();ctx.moveTo(cx+Math.cos(a)*R*0.3,cy+Math.sin(a)*R*0.3);ctx.lineTo(cx+Math.cos(a)*R*0.98,cy+Math.sin(a)*R*0.98);ctx.strokeStyle=COL.fg;ctx.lineWidth=3;ctx.lineCap='round';ctx.stroke();}
+  // centre: speed
+  ctx.fillStyle=COL.fg;ctx.font=`700 ${Math.round(R*0.55)}px Barlow Semi Condensed, Arial Narrow, sans-serif`;
+  ctx.fillText(live.speed!=null?String(Math.round(shown.speed)):'–',cx,cy-R*0.02);
+  ctx.fillStyle=COL.muted;ctx.font=`500 ${Math.round(R*0.1)}px JetBrains Mono, monospace`;ctx.fillText('km/h',cx,cy+R*0.3);
+  ctx.fillText(hasRpm?Math.round(shown.rpm)+' rpm':'rpm',cx,cy+R*0.44);
+  // boost mini-arc (bottom right) and coolant (bottom left)
+  const mini=(x,label,val,max,txt,color)=>{const r=R*0.17,y=cy+R*0.8;arc(x,y,r,Math.PI,Math.PI*2,COL.line,r*0.22);
+    if(val!=null)arc(x,y,r,Math.PI,Math.PI+Math.PI*Math.min(1,Math.max(0,val/max)),color,r*0.22);
+    ctx.fillStyle=COL.fg;ctx.font=`600 ${Math.round(r*0.55)}px Barlow Semi Condensed, Arial Narrow, sans-serif`;ctx.fillText(txt,x,y-r*0.15);
+    ctx.fillStyle=COL.muted;ctx.font=`500 ${Math.round(r*0.3)}px JetBrains Mono, monospace`;ctx.fillText(label,x,y+r*0.32);};
+  mini(cx+R*0.36,'boost bar',live.boost!=null?Math.max(0,shown.boost):null,1.4,live.boost!=null?shown.boost.toFixed(2):'–',COL.accent);
+  mini(cx-R*0.36,'coolant °C',live.coolant!=null?shown.coolant-40:null,80,live.coolant!=null?String(Math.round(shown.coolant)):'–',shown.coolant<60?COL.cool:COL.ok);
+}
+requestAnimationFrame(draw);
+
+// =============== demo ===============
+let demoTimer=null,dT=0;
+function toggleDemo(){
+  demo=!demo;$('btnDemo').textContent=demo?'Stop demo':'Demo';
+  if(demo){$('driveNote').textContent='Demo: invented values, not your car.';$('btnRec').disabled=false;dT=0;live.coolant=18;live.iat=12;live.volt=14.2;supported=new Set(['0C','0D','0B','04','10','05','0F','42','11']);
+    demoTimer=setInterval(()=>{dT+=0.25;const c=Math.max(0,Math.sin(dT/12)),acc=Math.max(0,Math.cos(dT/12));live.speed=Math.round(c*95);
+      live.rpm=830+c*1700+acc*900*(c>0.1?1:0)+Math.random()*30;live.load=18+acc*60*(c>0.05?1:0)+c*10;live.map=99+acc*95*(c>0.05?1:0)+c*20;live.maf=8+live.load*0.6;live.coolant=Math.min(90,live.coolant+0.12);live.iat=12+c*8;tick();},250);}
+  else{clearInterval(demoTimer);if(rec)stopTrip();for(const k in live)delete live[k];supported=new Set();updateTiles();$('btnRec').disabled=!connected;$('driveNote').textContent='Numbers marked “est.” are calculated from the engine data, not measured directly.';if(connected)poll();}
+}
+
+// =============== wire up ===============
+$('btnConnect').onclick=connect;
+$('btnRec').onclick=()=>rec?stopTrip():startTrip();
+$('btnDemo').onclick=toggleDemo;
+$('btnDtc').onclick=readDtc;
+$('btnFull').onclick=async()=>{document.body.classList.toggle('drive-full');try{if(!document.fullscreenElement)await document.documentElement.requestFullscreen();else await document.exitFullscreen();}catch(e){}setTimeout(sizeDial,200);};
+document.addEventListener('fullscreenchange',()=>{if(!document.fullscreenElement)document.body.classList.remove('drive-full');setTimeout(sizeDial,200);});
+document.addEventListener('visibilitychange',async()=>{if(rec&&document.visibilityState==='visible'){try{wake=await navigator.wakeLock?.request('screen');}catch(e){}}});
+window.addEventListener('beforeunload',e=>{if(rec&&!rec.demo){flushChunk();e.preventDefault();}});
+openDb().then(()=>renderTrips());
+if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
+sizeDial();updateTiles();
+})();
+</script>
+</body>
+</html>
