@@ -103,6 +103,7 @@ body.drive-full .tile{min-height:calc((100dvh - 120px)/2)}
 .log{font-family:var(--mono);font-size:11px;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px;max-height:300px;overflow:auto;white-space:pre-wrap;word-break:break-all}
 .dtc{font-family:var(--mono);font-weight:600;color:var(--warn)}
 label.field{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted)}
+input[type=text],input[type=password]{background:var(--panel2);border:1px solid var(--line);color:var(--fg);border-radius:8px;padding:10px;font:500 14px var(--mono);width:16em;max-width:100%}
 input[type=number]{background:var(--panel2);border:1px solid var(--line);color:var(--fg);border-radius:8px;padding:10px;font:500 15px var(--mono);width:9em}
 @media (prefers-reduced-motion:reduce){.g .meter i{transition:none}}
 </style>
@@ -184,6 +185,16 @@ input[type=number]{background:var(--panel2);border:1px solid var(--line);color:v
       <div class="panel">
         <h2>Trips</h2>
         <div id="trips"><p class="muted small">No trips yet. Connect, tap Start trip, drive, then tap Stop.</p></div>
+      </div>
+      <div class="panel">
+        <h2>Send trips to Claude</h2>
+        <p class="small muted">Closed trips are saved to your private GitHub repo, where Claude can read them. The key stays on this phone.</p>
+        <div class="row" style="align-items:flex-end">
+          <label class="field" for="ghRepo">Repository<input type="text" id="ghRepo" value="claudiufitui/golf-data" autocomplete="off" spellcheck="false"></label>
+          <label class="field" for="ghToken">GitHub key<input type="password" id="ghToken" placeholder="github_pat_…" autocomplete="off" spellcheck="false"></label>
+        </div>
+        <div class="row" style="margin-top:10px"><button class="btn" id="btnGhSave">Save key</button><button class="btn" id="btnGhSync">Send all trips now</button></div>
+        <p class="small" id="ghStatus" style="margin-top:8px"></p>
       </div>
       <div class="panel">
         <h2>Fuel estimate calibration</h2>
@@ -616,7 +627,42 @@ async function closeTrip(t){
   if(!t)return;await flushChunk(t);const s=summary(t);s.open=false;
   if(t.demo)demoTrips.unshift(s);else await put('trips',s);
   log(`Trip closed: ${s.km} km`);renderTrips();
+  if(!t.demo)syncPending();
 }
+// =============== GitHub sync ===============
+const gh={repo:recall('golf-gh-repo')||'claudiufitui/golf-data',token:recall('golf-gh-token')||''};
+$('ghRepo').value=gh.repo;if(gh.token)$('ghToken').value='••••••••';
+function ghStatus(t,cls){const e=$('ghStatus');e.textContent=t;e.style.color=cls?`var(--${cls})`:'';}
+const b64=str=>{const bytes=new TextEncoder().encode(str);let bin='';for(let i=0;i<bytes.length;i+=0x8000)bin+=String.fromCharCode.apply(null,bytes.subarray(i,i+0x8000));return btoa(bin);};
+async function ghPut(path,content,message){
+  const url=`https://api.github.com/repos/${gh.repo}/contents/${path}`;
+  const H={'Authorization':'Bearer '+gh.token,'Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'};
+  let sha;const g=await fetch(url,{headers:H});if(g.ok)sha=(await g.json()).sha;else if(g.status!==404)throw new Error('GitHub '+g.status);
+  const r=await fetch(url,{method:'PUT',headers:{...H,'Content-Type':'application/json'},body:JSON.stringify({message,content:b64(content),...(sha?{sha}:{})})});
+  if(!r.ok)throw new Error('GitHub '+r.status+(r.status===401?' (key not accepted)':r.status===404?' (repo not found, or the key can’t see it)':r.status===403?' (key lacks write permission)':''));
+}
+let syncing=false;
+async function syncTrip(t){
+  const csv=await tripCsv(t.id);const meta={...t};delete meta.state;delete meta.spark;
+  const dir='trips/'+t.id.slice(0,4)+'/'+t.id.slice(4,6);
+  await ghPut(`${dir}/${t.id}.csv`,csv,`Trip ${t.id}: ${t.km} km`);
+  await ghPut(`${dir}/${t.id}.json`,JSON.stringify(meta,null,1),`Trip ${t.id} summary`);
+  t.synced=true;await put('trips',t);
+}
+async function syncPending(force){
+  if(!gh.token||syncing)return;syncing=true;
+  try{const list=(await getAll('trips')).filter(t=>!t.open&&!t.demo&&(force||!t.synced)).sort((a,b)=>a.start-b.start);
+    if(!list.length){ghStatus('All trips are already sent.','ok');return;}
+    let n=0;for(const t of list){ghStatus(`Sending ${++n} of ${list.length}…`);await syncTrip(t);}
+    ghStatus(`Sent ${list.length} trip${list.length>1?'s':''} · ${new Date().toLocaleTimeString('ro-RO',{hour:'2-digit',minute:'2-digit'})}`,'ok');renderTrips();
+  }catch(e){ghStatus('Couldn’t send: '+e.message,'bad');log('Sync: '+e.message);}
+  finally{syncing=false;}
+}
+$('btnGhSave').onclick=()=>{const tok=$('ghToken').value.trim();gh.repo=$('ghRepo').value.trim()||gh.repo;store('golf-gh-repo',gh.repo);
+  if(tok&&!tok.startsWith('••')){gh.token=tok;store('golf-gh-token',tok);$('ghToken').value='••••••••';}
+  ghStatus(gh.token?'Key saved. Sending…':'Paste a key first.',gh.token?'':'warn');if(gh.token)syncPending();};
+$('btnGhSync').onclick=()=>syncPending(true);
+window.addEventListener('online',()=>syncPending());
 async function endTripNow(){const t=rec||paused;rec=null;paused=null;await closeTrip(t);renderTripState();}
 // After a reload: pick up a trip that paused recently, close older ones.
 async function reviveTrips(){
@@ -638,7 +684,7 @@ async function renderTrips(){
   const el=$('trips');
   if(!all.length){el.innerHTML='<p class="muted small">No trips yet. Connect, tap Start trip, drive, then tap Stop.</p>';return;}
   el.innerHTML=all.map(t=>{const d=new Date(t.start);
-    return `<div class="trip"><span class="when">${d.toLocaleDateString('ro-RO',{weekday:'short',day:'numeric',month:'short'})} · ${d.toLocaleTimeString('ro-RO',{hour:'2-digit',minute:'2-digit'})}${t.demo?' <span class="chip">demo, not saved</span>':''}</span>
+    return `<div class="trip"><span class="when">${d.toLocaleDateString('ro-RO',{weekday:'short',day:'numeric',month:'short'})} · ${d.toLocaleTimeString('ro-RO',{hour:'2-digit',minute:'2-digit'})}${t.demo?' <span class="chip">demo, not saved</span>':''}${t.synced?' <span class="chip ok">sent</span>':''}</span>
       <span class="acts">${t.demo?'':`<button class="btn" data-csv="${t.id}">CSV</button><button class="btn" data-share="${t.id}">Share</button>`}</span>
       <span class="meta">${t.km} km · ${fmt(t.engineS??t.durationS)} driving${t.stops?' · '+t.stops+' stop'+(t.stops>1?'s':''):''} · ${t.avgL100!=null?t.avgL100+' L/100 est. · ':''}max ${t.maxRpm} rpm · ${t.maxBoost} bar · idle ${fmt(t.idleS)}${t.warmTo80S!=null?' · 80°C at '+fmt(t.warmTo80S):' · never reached 80°C'}</span>
       ${sparkSvg(t.spark)}</div>`;}).join('');
@@ -747,7 +793,7 @@ $('btnFull').onclick=async()=>{document.body.classList.toggle('drive-full');try{
 document.addEventListener('fullscreenchange',()=>{if(!document.fullscreenElement)document.body.classList.remove('drive-full');});
 document.addEventListener('visibilitychange',()=>{if((connected||rec)&&document.visibilityState==='visible')keepAwake();});
 window.addEventListener('pagehide',()=>{if(rec&&!rec.demo)flushChunk(rec);});
-openDb().then(async()=>{await reviveTrips();renderTrips();autoConnect();});
+openDb().then(async()=>{await reviveTrips();renderTrips();autoConnect();syncPending();});
 if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
 updateCockpit(performance.now());
 })();
