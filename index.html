@@ -15,12 +15,13 @@
 :root{
   color-scheme:dark;
   --bg:#0b0e11; --panel:#12171c; --panel2:#171d23; --line:#242d35; --fg:#e8edf0; --muted:#83919c; --dim:#4a5661;
-  --accent:#ff7a3d; --accent-fg:#1a0d06; --ok:#3fc27a; --cool:#4aa8ff; --warn:#f0b03c; --bad:#ff5a4a;
+  --accent:#ff7a3d; --accent-fg:#1a0d06; --ok:#3fc27a; --cool:#4aa8ff; --warmup:#36c5c0; --warn:#f0b03c; --bad:#ff5a4a;
   --display:"Barlow Semi Condensed","Arial Narrow",system-ui,sans-serif;
   --body:"Inter",system-ui,-apple-system,"Segoe UI",sans-serif;
   --mono:"JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;
 }
 *{box-sizing:border-box}
+[hidden]{display:none!important}
 html,body{margin:0;height:100%}
 body{background:var(--bg);color:var(--fg);font-family:var(--body);font-size:15px;line-height:1.45;-webkit-tap-highlight-color:transparent}
 .app{min-height:100%;display:flex;flex-direction:column;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
@@ -47,42 +48,61 @@ h2{font-family:var(--display);font-weight:600;font-size:14px;text-transform:uppe
 .panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px}
 .muted{color:var(--muted)}.small{font-size:13px}.mono{font-family:var(--mono)}
 
-/* ---- Drive cluster ---- */
-.cluster{display:grid;gap:10px;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);grid-template-areas:"main side" "strip strip"}
-.dial{grid-area:main;background:radial-gradient(ellipse at 50% 60%,#151b21 0%,var(--bg) 75%);border:1px solid var(--line);border-radius:18px;position:relative;aspect-ratio:1.25;max-width:100%}
-.dial canvas{width:100%;height:100%;display:block}
-.side{grid-area:side;display:grid;grid-template-columns:1fr 1fr;gap:8px;align-content:start}
-.strip{grid-area:strip;display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px}
-.g{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:8px 10px;min-width:0;display:flex;flex-direction:column}
-.g .k{font-size:10.5px;text-transform:uppercase;letter-spacing:.12em;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.g .v{font-family:var(--display);font-weight:600;font-size:28px;line-height:1.05;font-variant-numeric:tabular-nums;white-space:nowrap}
-.g .u{font-family:var(--mono);font-size:10.5px;color:var(--dim)}
-.g.wide{grid-column:span 2}
-.g .meter{height:5px;border-radius:3px;background:var(--line);overflow:hidden;margin-top:6px}
-.g .meter i{display:block;height:100%;width:0;background:var(--accent);transition:width .25s linear}
-.g.na .v{color:var(--dim)}
-.hint{grid-column:span 2;font-size:13px;padding:8px 10px;border-radius:10px;border:1px solid var(--line);color:var(--muted);min-height:38px}
-.hint.cold{color:var(--cool);border-color:color-mix(in srgb,var(--cool) 40%,transparent)}
-.hint.good{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 40%,transparent)}
-.hint.warn{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 40%,transparent)}
-.gbox{aspect-ratio:1;max-height:110px}
+/* ---- Drive cockpit ---- */
+.cockpit{display:flex;flex-direction:column;gap:10px;border-radius:18px;padding:12px;border:1px solid var(--line);background:var(--panel);transition:box-shadow .3s}
+.cockpit.over{box-shadow:0 0 0 2px var(--bad),0 0 28px -4px var(--bad)}
+@media (prefers-reduced-motion:no-preference){.cockpit.over{animation:pulse 1s ease-in-out infinite}}
+@keyframes pulse{50%{box-shadow:0 0 0 2px var(--bad),0 0 8px -4px var(--bad)}}
+.lab{font-size:11px;text-transform:uppercase;letter-spacing:.14em;color:var(--muted)}
+.word{font-family:var(--display);font-weight:700;font-size:15px;letter-spacing:.12em;text-transform:uppercase;padding:2px 9px;border-radius:6px;background:var(--panel2);color:var(--muted)}
+/* rpm band */
+.rpm{display:flex;flex-direction:column;gap:6px}
+.rpm .head{display:flex;justify-content:space-between;align-items:baseline}
+.rpm .num{font-family:var(--display);font-weight:600;font-size:22px;font-variant-numeric:tabular-nums}
+.band{position:relative;height:46px;border-radius:10px;background:var(--panel2);overflow:hidden}
+.band .fill{position:absolute;inset:0 auto 0 0;width:0;border-radius:10px 0 0 10px;background:var(--ok);transition:width .15s linear,background .3s}
+.band .beyond{position:absolute;top:0;bottom:0;right:0;background:repeating-linear-gradient(135deg,color-mix(in srgb,var(--bad) 28%,transparent) 0 6px,transparent 6px 12px)}
+.band .eco{position:absolute;top:0;bottom:0;border-left:1px dashed var(--dim);border-right:1px dashed var(--dim)}
+.band .limit{position:absolute;top:-2px;bottom:-2px;width:4px;margin-left:-2px;background:var(--fg);border-radius:2px;transition:left .6s}
+.scale{position:relative;height:14px;font-family:var(--mono);font-size:10.5px;color:var(--dim)}
+.scale span{position:absolute;transform:translateX(-50%)}
+/* main pair */
+.pair{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:10px}
+.box{background:var(--panel2);border-radius:14px;padding:12px;display:flex;flex-direction:column;gap:8px;min-width:0;position:relative}
+.box .top2{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.big{font-family:var(--display);font-weight:700;font-size:clamp(64px,19vw,120px);line-height:.9;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.big small{font-size:.38em;font-weight:600;color:var(--muted);margin-left:2px}
+.mid{font-family:var(--display);font-weight:700;font-size:clamp(44px,12vw,80px);line-height:.95;font-variant-numeric:tabular-nums}
+.mid small{font-size:.4em;font-weight:600;color:var(--muted);margin-left:2px}
+.thermo{position:relative;height:12px;border-radius:6px;background:linear-gradient(90deg,var(--cool) 0 33%,var(--warmup) 33% 56%,var(--ok) 56% 89%,var(--bad) 89% 100%);opacity:.35}
+.mark{position:absolute;top:-5px;width:6px;height:22px;margin-left:-3px;border-radius:3px;background:var(--fg);transition:left .6s;box-shadow:0 0 0 2px var(--panel2)}
+.thermo-wrap,.boost-wrap{position:relative}
+.eta{font-family:var(--mono);font-size:12px;color:var(--muted);min-height:1.2em}
+.bbar{position:relative;height:12px;border-radius:6px;background:var(--panel);overflow:hidden}
+.bbar .fill{position:absolute;inset:0 auto 0 0;width:0;background:var(--ok);transition:width .15s linear,background .3s}
+.bbar .limit{position:absolute;top:0;bottom:0;width:3px;margin-left:-1.5px;background:var(--fg)}
+.ring{position:absolute;inset:0;border-radius:14px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;background:color-mix(in srgb,var(--panel2) 92%,transparent)}
+.ring svg{width:84px;height:84px}
+.ring .t{font-family:var(--display);font-weight:700;font-size:22px}
+/* small row */
+.minis{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px}
+.mini{display:flex;flex-direction:column;min-width:0}
+.mini .v{font-family:var(--display);font-weight:600;font-size:22px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.mini .u{font-family:var(--mono);font-size:10px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.st-cold{color:var(--cool)}.st-warm{color:var(--warmup)}.st-ok{color:var(--ok)}.st-hot{color:var(--bad)}.st-warn{color:var(--warn)}
+.bg-cold{background:color-mix(in srgb,var(--cool) 18%,transparent);color:var(--cool)}.bg-warm{background:color-mix(in srgb,var(--warmup) 18%,transparent);color:var(--warmup)}
+.bg-ok{background:color-mix(in srgb,var(--ok) 18%,transparent);color:var(--ok)}.bg-hot{background:color-mix(in srgb,var(--bad) 22%,transparent);color:var(--bad)}.bg-warn{background:color-mix(in srgb,var(--warn) 20%,transparent);color:var(--warn)}
 .controls{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
-@media (orientation:landscape) and (min-width:700px){
-  .cluster{grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);}
-}
-@media (max-width:640px){
-  .cluster{grid-template-columns:1fr;grid-template-areas:"main" "side" "strip"}
-  .strip{grid-template-columns:repeat(3,minmax(0,1fr))}
-  .g .v{font-size:24px}
-}
+details.legend{margin-top:14px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 14px}
+details.legend summary{cursor:pointer;font-weight:600}
+details.legend p{margin:.6em 0;font-size:14px;color:var(--muted);max-width:65ch}
+details.legend b{color:var(--fg)}
+@media (max-width:560px){.pair{grid-template-columns:1fr}.minis{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media (orientation:landscape) and (max-height:600px){
-  .cluster{grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);grid-template-areas:"main side" "main strip"}
-  .dial{aspect-ratio:auto;height:calc(100dvh - 120px);min-height:240px}
-  .strip{grid-template-columns:repeat(4,minmax(0,1fr))}
-  .side{grid-template-columns:repeat(3,minmax(0,1fr))}.g.wide,.hint{grid-column:span 3}
-  .g .v{font-size:21px}
+  .cockpit{padding:10px;gap:8px}.band{height:38px}
+  .big{font-size:min(26vh,110px)}.mid{font-size:min(18vh,72px)}
 }
-body.drive-full .top,body.drive-full nav{display:none}
+body.drive-full .top{display:none}
 body.drive-full main{padding-top:8px}
 
 /* ---- Trips ---- */
@@ -124,29 +144,38 @@ input[type=number]{background:var(--panel2);border:1px solid var(--line);color:v
     <!-- DRIVE -->
     <section class="view" id="view-drive">
       <div class="notice bad" id="btNotice" hidden></div>
-      <div class="cluster">
-        <div class="dial"><canvas id="dial"></canvas></div>
-        <div class="side">
-          <div class="g wide" id="g_cons"><span class="k" id="consLabel">Consumption now</span><span class="v" id="v_cons">–</span><span class="u" id="u_cons">L/100 km</span><div class="meter"><i id="m_cons"></i></div></div>
-          <div class="g" id="g_boost"><span class="k">Boost</span><span class="v" id="v_boost">–</span><span class="u">bar</span><div class="meter"><i id="m_boost"></i></div></div>
-          <div class="g" id="g_coolant"><span class="k">Coolant</span><span class="v" id="v_coolant">–</span><span class="u">°C</span><div class="meter"><i id="m_coolant"></i></div></div>
-          <div class="g" id="g_load"><span class="k">Load</span><span class="v" id="v_load">–</span><span class="u">%</span><div class="meter"><i id="m_load"></i></div></div>
-          <div class="g" id="g_power"><span class="k">Power est.</span><span class="v" id="v_power">–</span><span class="u">hp</span><div class="meter"><i id="m_power"></i></div></div>
-          <div class="hint" id="hint">Connect the adapter with the ignition on.</div>
+      <div class="cockpit" id="cockpit">
+        <div class="rpm">
+          <div class="head"><span class="lab">RPM</span><span class="num" id="rpmNum">–</span></div>
+          <div class="band" id="band"><div class="eco" id="eco"></div><div class="beyond" id="beyond"></div><div class="fill" id="rpmFill"></div><div class="limit" id="rpmLimit"></div></div>
+          <div class="scale"><span style="left:0%;transform:none">0</span><span style="left:20%">1</span><span style="left:40%">2</span><span style="left:60%">3</span><span style="left:80%">4</span><span style="left:100%;transform:translateX(-100%)">5k</span></div>
         </div>
-        <div class="strip">
-          <div class="g"><span class="k">Trip</span><span class="v" id="v_km">0.0</span><span class="u">km</span></div>
-          <div class="g"><span class="k">Time</span><span class="v" id="v_time">0:00</span><span class="u">min</span></div>
-          <div class="g"><span class="k">Trip avg</span><span class="v" id="v_avg">–</span><span class="u">L/100 km</span></div>
-          <div class="g"><span class="k">Fuel used</span><span class="v" id="v_fuel">0.00</span><span class="u">L</span></div>
-          <div class="g" id="g_iat"><span class="k">Intake air</span><span class="v" id="v_iat">–</span><span class="u">°C</span></div>
-          <div class="g" id="g_volt"><span class="k">Voltage</span><span class="v" id="v_volt">–</span><span class="u">V</span></div>
-          <div class="g" id="g_maf"><span class="k">Air flow</span><span class="v" id="v_maf">–</span><span class="u">g/s</span></div>
-          <div class="g"><span class="k">Accel</span><span class="v" id="v_acc">–</span><span class="u">g</span></div>
-          <div class="g"><span class="k">Altitude</span><span class="v" id="v_alt">–</span><span class="u">m</span></div>
-          <div class="g"><span class="k">Idle</span><span class="v" id="v_idle">0:00</span><span class="u">min this trip</span></div>
-          <div class="g"><span class="k">Above 2000</span><span class="v" id="v_hot">0:00</span><span class="u">min, DPF-friendly</span></div>
-          <div class="g"><span class="k">Max boost</span><span class="v" id="v_maxboost">–</span><span class="u">bar this trip</span></div>
+        <div class="pair">
+          <div class="box">
+            <div class="top2"><span class="lab">Coolant</span><span class="word" id="cWord">–</span></div>
+            <div class="big" id="cNum">–<small>°C</small></div>
+            <div class="thermo-wrap"><div class="thermo"></div><div class="mark" id="cMark" style="left:0"></div></div>
+            <div class="scale"><span style="left:0%;transform:none">20</span><span style="left:22.2%">40</span><span style="left:44.4%">60</span><span style="left:66.7%">80</span><span style="left:88.9%">100</span></div>
+            <div class="eta" id="cEta"></div>
+          </div>
+          <div class="box" id="boostBox">
+            <div class="top2"><span class="lab">Turbo</span><span class="word" id="bWord">–</span></div>
+            <div class="mid" id="bNum">–<small>bar</small></div>
+            <div class="bbar"><div class="fill" id="bFill"></div><div class="limit" id="bLimit" hidden></div></div>
+            <div class="scale"><span style="left:0%;transform:none">0</span><span style="left:35.7%">0.5</span><span style="left:71.4%">1.0</span><span style="left:100%;transform:translateX(-100%)">1.4</span></div>
+            <div class="ring" id="cool" hidden>
+              <svg viewBox="0 0 84 84" aria-hidden="true"><circle cx="42" cy="42" r="36" fill="none" stroke="var(--line)" stroke-width="7"/><circle id="coolArc" cx="42" cy="42" r="36" fill="none" stroke="var(--cool)" stroke-width="7" stroke-linecap="round" stroke-dasharray="226.2" stroke-dashoffset="0" transform="rotate(-90 42 42)"/></svg>
+              <span class="t" id="coolT">0:60</span><span class="lab">turbo cool-down</span>
+            </div>
+          </div>
+        </div>
+        <div class="minis">
+          <div class="mini"><span class="lab">Now</span><span class="v" id="mCons">–</span><span class="u" id="mConsU">L/100 est.</span></div>
+          <div class="mini"><span class="lab">Trip avg</span><span class="v" id="mAvg">–</span><span class="u">L/100 est.</span></div>
+          <div class="mini"><span class="lab">Trip</span><span class="v" id="mKm">0.0</span><span class="u" id="mTime">km · 0:00</span></div>
+          <div class="mini"><span class="lab">Battery</span><span class="v" id="mVolt">–</span><span class="u">V</span></div>
+          <div class="mini"><span class="lab">Intake</span><span class="v" id="mIat">–</span><span class="u">°C</span></div>
+          <div class="mini"><span class="lab">Speed</span><span class="v" id="mSpeed">–</span><span class="u">km/h</span></div>
         </div>
       </div>
       <div class="controls">
@@ -155,7 +184,14 @@ input[type=number]{background:var(--panel2);border:1px solid var(--line);color:v
         <button class="btn" id="btnFull">Full screen</button>
         <button class="btn" id="btnDemo">Demo</button>
       </div>
-      <p class="muted small" id="driveNote">Numbers marked “est.” are calculated from the engine data, not measured directly.</p>
+      <p class="muted small" id="driveNote"></p>
+      <details class="legend">
+        <summary>How to read this</summary>
+        <p><b>RPM bar.</b> The white line is how high you should rev right now. It moves with engine temperature: 2000 when cold, 2500 below 60°C, 3000 below 75°C, 3500 below 85°C, then 4500 when fully warm. Past the line the bar turns red and the whole panel glows. Amber means you’re close. Green means you’re in the diesel’s efficient zone, 1500–2600 rpm when warm, which is marked with dashed lines.</p>
+        <p><b>Coolant.</b> Exact temperature, which your dashboard needle can’t show. COLD below 60°C, WARMING to 80°C, READY from 80°C, HOT above 105°C. While warming it estimates how many minutes until 80°C.</p>
+        <p><b>Turbo.</b> Boost is how much extra air the turbo pushes in, in bar above outside pressure. OFF means cruising or idling, normal. ON means the turbo is working. FULL means it’s giving close to everything, about 1.0–1.2 bar on your engine. When the engine is cold, a white line shows the boost to stay under, because the oil hasn’t reached the turbo bearings properly yet. LOW appears if you floor it above 2000 rpm and boost stays under 0.6 bar for a few seconds. That can point to a boost leak, a sticky turbo or limp mode, so tell Claude if you see it often.</p>
+        <p><b>Turbo cool-down.</b> After hard driving, when you stop, a ring counts down a minute of idling so the turbo can cool before you switch off.</p>
+      </details>
     </section>
 
     <!-- TRIPS -->
@@ -283,7 +319,6 @@ document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{
   document.querySelectorAll('nav button').forEach(x=>x.setAttribute('aria-current',x===b));
   document.querySelectorAll('.view').forEach(v=>v.hidden=v.id!=='view-'+b.dataset.view);
   if(b.dataset.view==='trips')renderTrips();
-  sizeDial();
 });
 
 // =============== storage (IndexedDB on this phone) ===============
@@ -577,80 +612,74 @@ function stopGps(){if(gpsWatch!=null)navigator.geolocation.clearWatch(gpsWatch);
 window.addEventListener('devicemotion',e=>{const a=e.acceleration||e.accelerationIncludingGravity;if(a){motion={x:a.x,y:a.y,z:a.z};}});
 
 // =============== main loop: derive, record, draw ===============
-function tick(){const now=performance.now();derive(now);sampleTrip(Date.now());updateTiles();}
-function setTile(k,v,dec,max,warnFn){
-  const vEl=$('v_'+k);if(!vEl)return;const g=vEl.closest('.g');
-  if(v==null||!isFinite(v)){vEl.textContent='–';g&&g.classList.add('na');const m=$('m_'+k);if(m)m.style.width='0';return;}
-  g&&g.classList.remove('na');vEl.textContent=v.toFixed(dec);
-  const m=$('m_'+k);if(m&&max){m.style.width=Math.max(0,Math.min(100,v/max*100))+'%';m.style.background=warnFn?warnFn(v):'var(--accent)';}
+function tick(){const now=performance.now();derive(now);sampleTrip(Date.now());updateCockpit(now);}
+// How hard the engine may be worked at a given coolant temperature
+function rpmLimit(c){if(c==null)return null;if(c<40)return 2000;if(c<60)return 2500;if(c<75)return 3000;if(c<85)return 3500;return REDLINE;}
+function boostLimit(c){if(c==null)return null;if(c<50)return 0.4;if(c<70)return 0.7;return null;}
+const cHist=[];let lowSince=null,lastHard=-1e9,stopAt=null;
+const pct=(v,max)=>Math.max(0,Math.min(100,v/max*100));
+function phase(c){return c<60?'cold':c<80?'warm':c<=105?'ok':'hot';}
+function updateCockpit(now){
+  const c=live.coolant,r=live.rpm,b=live.boost,ld=live.load??0,sp=live.speed;
+  const lim=rpmLimit(c),warm=c!=null&&c>=80;
+  // ---- rpm band
+  $('rpmNum').textContent=r!=null?Math.round(r):'–';
+  const L=lim??REDLINE;
+  $('rpmLimit').style.left=pct(L,RPM_MAX)+'%';$('rpmLimit').hidden=lim==null;
+  $('beyond').style.left=pct(L,RPM_MAX)+'%';
+  $('eco').style.left=pct(1500,RPM_MAX)+'%';$('eco').style.width=(pct(2600,RPM_MAX)-pct(1500,RPM_MAX))+'%';$('eco').hidden=!warm;
+  let col='var(--fg)';
+  if(r!=null){
+    if(r>L)col='var(--bad)';
+    else if(r>L*0.88)col='var(--warn)';
+    else if(r<1300&&ld>70&&(sp??0)>5)col='var(--warn)';          // lugging: too low for the load
+    else if(warm&&r>=1500&&r<=2600)col='var(--ok)';
+    else if(!warm)col='var(--cool)';
+  }
+  $('rpmFill').style.width=r!=null?pct(r,RPM_MAX)+'%':'0';$('rpmFill').style.background=col;
+  // ---- coolant
+  if(c!=null){
+    const ph=phase(c);
+    $('cNum').innerHTML=Math.round(c)+'<small>°C</small>';$('cNum').className='big st-'+ph;
+    $('cWord').textContent={cold:'cold',warm:'warming',ok:'ready',hot:'hot'}[ph];$('cWord').className='word bg-'+ph;
+    $('cMark').style.left=pct(c-20,90)+'%';
+    cHist.push([now,c]);while(cHist.length&&now-cHist[0][0]>90000)cHist.shift();
+    let eta='';
+    if(c<80&&cHist.length>5&&now-cHist[0][0]>30000){const rate=(c-cHist[0][1])/((now-cHist[0][0])/60000);if(rate>0.3)eta=`80°C in ~${Math.max(1,Math.round((80-c)/rate))} min at this pace`;}
+    $('cEta').textContent=eta;
+  }else{$('cNum').innerHTML='–<small>°C</small>';$('cNum').className='big';$('cWord').textContent='–';$('cWord').className='word';$('cEta').textContent='';}
+  // ---- turbo
+  const bl=boostLimit(c);
+  if(b!=null){
+    const bb=Math.max(0,b);
+    $('bNum').innerHTML=bb.toFixed(2)+'<small>bar</small>';
+    let w='off',cls='',fill='var(--dim)';
+    if(bl!=null&&bb>bl){w='easy';cls='hot';fill='var(--bad)';}
+    else if(bb>=0.9){w='full';cls='warn';fill='var(--accent)';}
+    else if(bb>=0.15){w='on';cls='ok';fill='var(--ok)';}
+    // low boost under full load
+    if(ld>90&&(r??0)>2000&&(r??0)<3800&&bb<0.6){lowSince=lowSince??now;if(now-lowSince>3000){w='low';cls='warn';fill='var(--warn)';}}else lowSince=null;
+    $('bWord').textContent=w;$('bWord').className='word'+(cls?' bg-'+cls:'');
+    $('bFill').style.width=pct(bb,1.4)+'%';$('bFill').style.background=fill;
+    if(bb>0.8||ld>80)lastHard=now;
+  }else{$('bNum').innerHTML='–<small>bar</small>';$('bWord').textContent='–';$('bWord').className='word';$('bFill').style.width='0';}
+  $('bLimit').hidden=bl==null;if(bl!=null)$('bLimit').style.left=pct(bl,1.4)+'%';
+  // ---- turbo cool-down after hard driving
+  const stopped=sp!=null&&sp<1&&(r??0)>400;
+  if(stopped&&now-lastHard<180000){stopAt=stopAt??now;}else if(!stopped)stopAt=null;
+  const left=stopAt!=null?Math.max(0,60-(now-stopAt)/1000):0;
+  $('cool').hidden=!(stopAt!=null&&left>0);
+  if(!$('cool').hidden){$('coolT').textContent='0:'+String(Math.ceil(left)).padStart(2,'0');$('coolArc').setAttribute('stroke-dashoffset',String(226.2*(1-left/60)));}
+  // ---- whole-panel warning
+  $('cockpit').classList.toggle('over',(r!=null&&r>L)||(b!=null&&bl!=null&&b>bl));
+  // ---- small row
+  if(live.l100!=null){$('mCons').textContent=Math.min(live.l100,99).toFixed(1);$('mConsU').textContent='L/100 est.';}
+  else if(live.lph!=null){$('mCons').textContent=live.lph.toFixed(1);$('mConsU').textContent='L/h est.';}else $('mCons').textContent='–';
+  $('mVolt').textContent=live.volt!=null?live.volt.toFixed(1):'–';$('mVolt').className='v'+(live.volt!=null&&live.volt<12.2&&(r??0)>500?' st-warn':'');
+  $('mIat').textContent=live.iat!=null?Math.round(live.iat):'–';
+  $('mSpeed').textContent=sp!=null?Math.round(sp):'–';
+  if(rec){$('mKm').textContent=rec.km.toFixed(1);$('mTime').textContent='km · '+fmt((Date.now()-rec.start)/1000);$('mAvg').textContent=rec.km>0.3?(rec.fuel/rec.km*100).toFixed(1):'–';$('chipRec').textContent='REC '+fmt((Date.now()-rec.start)/1000);}
 }
-function updateTiles(){
-  if(live.l100!=null){$('consLabel').textContent='Consumption now (est.)';$('u_cons').textContent='L/100 km';setTile('cons',Math.min(live.l100,99),1,20,v=>v<5?'var(--ok)':v<9?'var(--warn)':'var(--bad)');}
-  else{$('consLabel').textContent='Fuel flow now (est.)';$('u_cons').textContent='L/h';setTile('cons',live.lph,2,4);}
-  setTile('boost',live.boost,2,1.4);
-  setTile('coolant',live.coolant,0,110,v=>v<60?'var(--cool)':v<105?'var(--ok)':'var(--bad)');
-  setTile('load',live.load,0,100);setTile('power',live.hp,0,110);
-  setTile('iat',live.iat,0);setTile('volt',live.volt,1);setTile('maf',live.maf,1);setTile('acc',live.accg,2);
-  $('v_alt').textContent=gps.alt!=null?Math.round(gps.alt):'–';
-  if(rec){$('v_km').textContent=rec.km.toFixed(1);$('v_time').textContent=fmt((Date.now()-rec.start)/1000);$('v_fuel').textContent=rec.fuel.toFixed(2);
-    $('v_avg').textContent=rec.km>0.3?(rec.fuel/rec.km*100).toFixed(1):'–';$('v_idle').textContent=fmt(rec.idleS);$('v_hot').textContent=fmt(rec.hotS);$('v_maxboost').textContent=rec.maxBoost.toFixed(2);
-    $('chipRec').textContent='REC '+fmt((Date.now()-rec.start)/1000);}
-  // driving hint
-  const h=$('hint');const c=live.coolant;
-  if(c==null){h.className='hint';h.textContent=connected||demo?'Waiting for engine data…':'Connect the adapter with the ignition on.';}
-  else if(c<60){h.className='hint cold';h.textContent=`Engine cold (${Math.round(c)}°C). Keep it under 2500 rpm and go easy on the boost.`;}
-  else if(c<80){h.className='hint cold';h.textContent=`Warming up (${Math.round(c)}°C). Almost there.`;}
-  else if((live.volt??14)<12.2&&(live.rpm??0)>500){h.className='hint warn';h.textContent=`Voltage low while running (${live.volt.toFixed(1)} V). Check the battery and alternator.`;}
-  else if(rec&&rec.hotS>=600){h.className='hint good';h.textContent='10+ minutes of steady 2000+ rpm this trip. Good conditions for the DPF to clean itself.';}
-  else {h.className='hint good';h.textContent='Engine warm. All normal.';}
-}
-
-// =============== the dial (canvas) ===============
-const cv=$('dial'),ctx=cv.getContext('2d');let W=0,H=0,dpr=1;
-function sizeDial(){const r=cv.getBoundingClientRect();if(!r.width)return;dpr=window.devicePixelRatio||1;W=r.width;H=r.height;cv.width=W*dpr;cv.height=H*dpr;ctx.setTransform(dpr,0,0,dpr,0,0);}
-window.addEventListener('resize',sizeDial);
-const shown={rpm:0,speed:0,boost:0,coolant:0};
-const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
-const COL={fg:css('--fg'),muted:css('--muted'),dim:css('--dim'),line:css('--line'),accent:css('--accent'),bad:css('--bad'),ok:css('--ok'),cool:css('--cool')};
-function arc(cx,cy,r,a0,a1,color,w){ctx.beginPath();ctx.arc(cx,cy,r,a0,a1);ctx.strokeStyle=color;ctx.lineWidth=w;ctx.lineCap='butt';ctx.stroke();}
-function draw(){
-  requestAnimationFrame(draw);
-  if(!W){sizeDial();if(!W)return;}
-  const ease=(k,t)=>{const v=live[k];if(v!=null&&isFinite(v))shown[k]+=(v-shown[k])*t;};
-  ease('rpm',0.25);ease('speed',0.25);ease('boost',0.25);ease('coolant',0.1);
-  ctx.clearRect(0,0,W,H);
-  const cx=W/2,cy=H*0.52,R=Math.min(W*0.44,H*0.46);
-  const A0=Math.PI*0.75,A1=Math.PI*2.25,span=A1-A0;
-  const rpmA=v=>A0+span*Math.min(1,Math.max(0,v/RPM_MAX));
-  // track, redline
-  arc(cx,cy,R,A0,A1,COL.line,R*0.09);
-  arc(cx,cy,R,rpmA(REDLINE),A1,COL.bad,R*0.09);
-  // band 1500-2500 = diesel sweet spot
-  arc(cx,cy,R*0.885,rpmA(1500),rpmA(2500),COL.ok,R*0.02);
-  // fill
-  const hasRpm=live.rpm!=null;
-  if(hasRpm)arc(cx,cy,R,A0,rpmA(shown.rpm),shown.rpm>REDLINE?COL.bad:COL.accent,R*0.09);
-  // ticks
-  ctx.fillStyle=COL.muted;ctx.font=`600 ${Math.round(R*0.11)}px Barlow Semi Condensed, Arial Narrow, sans-serif`;ctx.textAlign='center';ctx.textBaseline='middle';
-  for(let k=0;k<=RPM_MAX;k+=500){const a=rpmA(k);const r1=R*0.8,r2=k%1000===0?R*0.72:R*0.76;
-    ctx.beginPath();ctx.moveTo(cx+Math.cos(a)*r1,cy+Math.sin(a)*r1);ctx.lineTo(cx+Math.cos(a)*r2,cy+Math.sin(a)*r2);ctx.strokeStyle=k>=REDLINE?COL.bad:COL.dim;ctx.lineWidth=k%1000===0?2.5:1.5;ctx.stroke();
-    if(k%1000===0)ctx.fillText(String(k/1000),cx+Math.cos(a)*R*0.62,cy+Math.sin(a)*R*0.62);}
-  // needle
-  if(hasRpm){const a=rpmA(shown.rpm);ctx.beginPath();ctx.moveTo(cx+Math.cos(a)*R*0.3,cy+Math.sin(a)*R*0.3);ctx.lineTo(cx+Math.cos(a)*R*0.98,cy+Math.sin(a)*R*0.98);ctx.strokeStyle=COL.fg;ctx.lineWidth=3;ctx.lineCap='round';ctx.stroke();}
-  // centre: speed
-  ctx.fillStyle=COL.fg;ctx.font=`700 ${Math.round(R*0.55)}px Barlow Semi Condensed, Arial Narrow, sans-serif`;
-  ctx.fillText(live.speed!=null?String(Math.round(shown.speed)):'–',cx,cy-R*0.02);
-  ctx.fillStyle=COL.muted;ctx.font=`500 ${Math.round(R*0.1)}px JetBrains Mono, monospace`;ctx.fillText('km/h',cx,cy+R*0.3);
-  ctx.fillText(hasRpm?Math.round(shown.rpm)+' rpm':'rpm',cx,cy+R*0.44);
-  // boost mini-arc (bottom right) and coolant (bottom left)
-  const mini=(x,label,val,max,txt,color)=>{const r=R*0.17,y=cy+R*0.8;arc(x,y,r,Math.PI,Math.PI*2,COL.line,r*0.22);
-    if(val!=null)arc(x,y,r,Math.PI,Math.PI+Math.PI*Math.min(1,Math.max(0,val/max)),color,r*0.22);
-    ctx.fillStyle=COL.fg;ctx.font=`600 ${Math.round(r*0.55)}px Barlow Semi Condensed, Arial Narrow, sans-serif`;ctx.fillText(txt,x,y-r*0.15);
-    ctx.fillStyle=COL.muted;ctx.font=`500 ${Math.round(r*0.3)}px JetBrains Mono, monospace`;ctx.fillText(label,x,y+r*0.32);};
-  mini(cx+R*0.36,'boost bar',live.boost!=null?Math.max(0,shown.boost):null,1.4,live.boost!=null?shown.boost.toFixed(2):'–',COL.accent);
-  mini(cx-R*0.36,'coolant °C',live.coolant!=null?shown.coolant-40:null,80,live.coolant!=null?String(Math.round(shown.coolant)):'–',shown.coolant<60?COL.cool:COL.ok);
-}
-requestAnimationFrame(draw);
 
 // =============== demo ===============
 let demoTimer=null,dT=0;
@@ -658,8 +687,8 @@ function toggleDemo(){
   demo=!demo;$('btnDemo').textContent=demo?'Stop demo':'Demo';
   if(demo){$('driveNote').textContent='Demo: invented values, not your car.';$('btnRec').disabled=false;dT=0;live.coolant=18;live.iat=12;live.volt=14.2;supported=new Set(['0C','0D','0B','04','10','05','0F','42','11']);
     demoTimer=setInterval(()=>{dT+=0.25;const c=Math.max(0,Math.sin(dT/12)),acc=Math.max(0,Math.cos(dT/12));live.speed=Math.round(c*95);
-      live.rpm=830+c*1700+acc*900*(c>0.1?1:0)+Math.random()*30;live.load=18+acc*60*(c>0.05?1:0)+c*10;live.map=99+acc*95*(c>0.05?1:0)+c*20;live.maf=8+live.load*0.6;live.coolant=Math.min(90,live.coolant+0.12);live.iat=12+c*8;tick();},250);}
-  else{clearInterval(demoTimer);if(rec)stopTrip();for(const k in live)delete live[k];supported=new Set();updateTiles();$('btnRec').disabled=!connected;$('driveNote').textContent='Numbers marked “est.” are calculated from the engine data, not measured directly.';if(connected)poll();}
+      live.rpm=830+c*1700+acc*900*(c>0.1?1:0)+Math.random()*30;live.load=18+acc*60*(c>0.05?1:0)+c*10;live.map=99+acc*95*(c>0.05?1:0)+c*20;live.maf=8+live.load*0.6;live.coolant=Math.min(92,live.coolant+0.35);live.iat=12+c*8;tick();},250);}
+  else{clearInterval(demoTimer);if(rec)stopTrip();for(const k in live)delete live[k];supported=new Set();updateCockpit(performance.now());$('btnRec').disabled=!connected;$('driveNote').textContent='';if(connected)poll();}
 }
 
 // =============== wire up ===============
@@ -667,13 +696,13 @@ $('btnConnect').onclick=connect;
 $('btnRec').onclick=()=>rec?stopTrip():startTrip();
 $('btnDemo').onclick=toggleDemo;
 $('btnDtc').onclick=readDtc;
-$('btnFull').onclick=async()=>{document.body.classList.toggle('drive-full');try{if(!document.fullscreenElement)await document.documentElement.requestFullscreen();else await document.exitFullscreen();}catch(e){}setTimeout(sizeDial,200);};
-document.addEventListener('fullscreenchange',()=>{if(!document.fullscreenElement)document.body.classList.remove('drive-full');setTimeout(sizeDial,200);});
+$('btnFull').onclick=async()=>{document.body.classList.toggle('drive-full');try{if(!document.fullscreenElement)await document.documentElement.requestFullscreen();else await document.exitFullscreen();}catch(e){}};
+document.addEventListener('fullscreenchange',()=>{if(!document.fullscreenElement)document.body.classList.remove('drive-full');});
 document.addEventListener('visibilitychange',async()=>{if(rec&&document.visibilityState==='visible'){try{wake=await navigator.wakeLock?.request('screen');}catch(e){}}});
 window.addEventListener('beforeunload',e=>{if(rec&&!rec.demo){flushChunk();e.preventDefault();}});
 openDb().then(()=>renderTrips());
 if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
-sizeDial();updateTiles();
+updateCockpit(performance.now());
 })();
 </script>
 </body>
