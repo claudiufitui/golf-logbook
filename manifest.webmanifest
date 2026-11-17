@@ -1,2 +1,2 @@
-{"name":"Golf Logbook","short_name":"Golf","start_url":"./","scope":"./","display":"standalone","orientation":"any","background_color":"#0b0e11","theme_color":"#0b0e11",
+{"name":"Golfozaur 3000","short_name":"Golfozaur","start_url":"./","scope":"./","display":"standalone","orientation":"any","background_color":"#0b0e11","theme_color":"#0b0e11",
 "icons":[{"src":"icon-192.png","sizes":"192x192","type":"image/png"},{"src":"icon-512.png","sizes":"512x512","type":"image/png","purpose":"any maskable"}]}

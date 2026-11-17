@@ -1,4 +1,4 @@
-# Golf Logbook
+# Golfozaur 3000
 
 Live engine data and trip logging for a 2008 VW Golf 5 1.9 TDI (BLS), through a Bluetooth LE OBD-II adapter (Vgate iCar Pro 2S), in Chrome on Android.
 
