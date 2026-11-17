@@ -423,19 +423,50 @@ async function readMonitors(){
   $('monitors').innerHTML=`<p>Engine warning light: <b style="color:${mil?'var(--bad)':'var(--ok)'}">${mil?'ON':'off'}</b> · stored codes: <b>${count}</b> · ${diesel?'diesel':'petrol'} monitors</p>`+
     '<div class="pids">'+list.filter(x=>x[1]).map(([n,,inc])=>`<span class="chip ${inc?'warn':'ok'}">${n}: ${inc?'not ready':'ready'}</span>`).join('')+'</div>';
 }
-async function readPid(p){const r=await cmd('01'+p,1200);const b=payload(r,'41',p);if(!b||b.length<P[p].b)return;live[P[p].k]=P[p].f(b[0],b[1],b[2],b[3]);}
+const fresh={};   // when each field last got a real answer
+function setLive(k,v){live[k]=v;fresh[k]=performance.now();}
+async function readPid(p){const r=await cmd('01'+p,1200);const b=payload(r,'41',p);if(!b||b.length<P[p].b)return false;setLive(P[p].k,P[p].f(b[0],b[1],b[2],b[3]));return true;}
+// Several PIDs in one request (CAN allows up to 6). Answer: 41 then pid,data,pid,data…, possibly split over numbered lines.
+function parseMulti(r,pids){
+  if(!r)return null;
+  const ls=(r||'').split(/[\r\n]+/).map(x=>x.replace(/\s/g,'').toUpperCase()).filter(Boolean);
+  let hex=ls.filter(l=>!/^[0-9A-F]{3}$/.test(l)).map(l=>l.replace(/^[0-9A-F]:/,'')).join('');
+  const i=hex.indexOf('41');if(i<0)return null;hex=hex.slice(i+2);
+  const bytes=[];for(let j=0;j+1<hex.length;j+=2)bytes.push(parseInt(hex.slice(j,j+2),16));
+  const out={};let j=0;
+  while(j<bytes.length){const pid=bytes[j].toString(16).padStart(2,'0').toUpperCase();const d=P[pid];if(!d||!pids.includes(pid))break;
+    const data=bytes.slice(j+1,j+1+d.b);if(data.length<d.b)break;out[pid]=data;j+=1+d.b;if(bytes[j]===0x41)j++;}
+  return Object.keys(out).length?out:null;
+}
+let multiOk=null;
+async function readFast(list){
+  if(multiOk!==false&&isCan&&list.length>1){
+    const r=await cmd('01'+list.join(''),1500);const got=parseMulti(r,list);
+    if(multiOk===null){multiOk=!!got&&Object.keys(got).length===list.length;log('Multi-PID '+(multiOk?'works':'not usable')+': '+clean(r));}
+    if(got){for(const p in got)setLive(P[p].k,P[p].f(...got[p]));if(multiOk)return;}
+  }
+  for(const p of list)await readPid(p);
+}
+async function readVoltage(){const r=await cmd('ATRV',1000);const m=(r||'').match(/(\d+(\.\d+)?)\s*V/i);if(m)setLive('volt',parseFloat(m[1]));}
 let slowIdx=0,cycles=0,hzT=performance.now();
 async function poll(){
-  const slow=[...supported].filter(p=>P[p]&&!FAST.includes(p)&&!ONCE.includes(p));
+  const fast=FAST.filter(p=>supported.has(p));
+  const slow=[...supported].filter(p=>P[p]&&!FAST.includes(p)&&!ONCE.includes(p)&&p!=='42');
   while(connected&&!demo){
     const t0=performance.now();
-    for(const p of FAST)if(supported.has(p))await readPid(p);
-    if(slow.length){await readPid(slow[slowIdx%slow.length]);slowIdx++;}
+    await readFast(fast);
+    // one slow sensor per cycle; every 6th cycle the battery voltage straight from the adapter
+    if(slowIdx%6===5)await readVoltage();
+    else if(slow.length)await readPid(slow[slowIdx%slow.length]);
+    slowIdx++;
+    expireStale();
     tick();
     cycles++;if(performance.now()-hzT>3000){chip('chipHz',(cycles*1000/(performance.now()-hzT)).toFixed(1)+' Hz','ok');$('chipHz').hidden=false;cycles=0;hzT=performance.now();}
-    const dt=performance.now()-t0;if(dt<150)await new Promise(r=>setTimeout(r,150-dt));
+    const dt=performance.now()-t0;if(dt<120)await new Promise(r=>setTimeout(r,120-dt));
   }
 }
+// A value the ECU hasn't confirmed for a while is dropped instead of repeated.
+function expireStale(){const now=performance.now();for(const k in fresh){const max=['rpm','speed','map','load','maf'].includes(k)?4000:30000;if(now-fresh[k]>max){delete live[k];delete fresh[k];}}}
 
 // =============== fault codes ===============
 function parseDtc(r,mode){const codes=[];for(let l of lines(r)){const L=l.toUpperCase();const i=L.indexOf(mode);if(i<0)continue;let h=L.slice(i+2);if(isCan)h=h.slice(2);
