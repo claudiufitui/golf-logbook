@@ -112,7 +112,7 @@ input[type=number]{background:var(--panel2);border:1px solid var(--line);color:v
 <body>
 <div class="app">
   <div class="top">
-    <div class="brand">Golf Logbook<small>1.9 TDI BLS · v15</small></div>
+    <div class="brand">Golf Logbook<small>1.9 TDI BLS · v16</small></div>
     <div class="chips">
       <span class="chip" id="chipBt">Adapter off</span>
       <span class="chip" id="chipGps">GPS off</span>
@@ -160,7 +160,7 @@ input[type=number]{background:var(--panel2);border:1px solid var(--line);color:v
           <div><span class="k">Trip L/100</span><span class="v" id="mAvg">–</span></div>
           <div><span class="k">Trip km</span><span class="v" id="mKm">–</span></div>
           <div><span class="k">Battery V</span><span class="v" id="mVolt">–</span></div>
-          <div><span class="k">Intake °C</span><span class="v" id="mIat">–</span></div>
+          <div><span class="k">Outside °C</span><span class="v" id="mIat">–</span></div>
         </div>
       </div>
       <div class="tripbar"><span class="chip" id="tripState">No trip</span><span class="muted small" id="tripInfo"></span></div>
@@ -641,6 +641,7 @@ function derive(now){
         if(mapAtRest!=null)baroBase=mapAtRest;
         else if(live.map!=null&&(live.rpm??0)>500&&(live.rpm??0)<1000&&(live.load??100)<30)baroBase=baroBase==null?live.map:Math.min(baroBase,live.map); }
   if(live.map!=null)live.boost=Math.max(-0.2,(live.map-(baroBase??99))/100);
+  if(weather.t!=null)live.ambient=weather.t;
   // fuel: use ECU fuel rate if reported, else load × rpm estimate
   if(live.fuelrate!=null&&supported.has('5E'))live.lph=live.fuelrate;
   else if(live.rpm!=null&&live.load!=null)live.lph=(live.rpm>300?live.load/100*live.rpm*FUEL_K:0)*calib;
@@ -706,7 +707,7 @@ function flushChunk(t){t=t||rec;if(!t)return Promise.resolve();if(t.demo){t.buf=
 const KEEP=['km','fuel','idleS','hotS','engineS','stops','maxRpm','maxBoost','maxSpeed','maxCoolant','warm80','coolStart','chunk','n','spark','start','id'];
 function summary(t){return {id:t.id,start:t.start,end:t.last||Date.now(),durationS:Math.round(((t.last||Date.now())-t.start)/1000),engineS:Math.round(t.engineS||0),stops:t.stops||0,km:+t.km.toFixed(2),fuelL:+t.fuel.toFixed(3),avgL100:t.km>0.5?+(t.fuel/t.km*100).toFixed(2):null,
   samples:t.n,idleS:Math.round(t.idleS),hotS:Math.round(t.hotS),maxRpm:Math.round(t.maxRpm),maxBoost:+t.maxBoost.toFixed(2),maxSpeed:Math.round(t.maxSpeed),coolantStart:t.coolStart,maxCoolant:t.maxCoolant,warmTo80S:t.warm80,
-  calib,fields:['t'].concat(FIELDS,EXTRA),supported:[...supported],spark:t.spark,demo:t.demo,state:Object.fromEntries(KEEP.map(k=>[k,t[k]]))};}
+  outsideC:weather.t,calib,fields:['t'].concat(FIELDS,EXTRA),supported:[...supported],spark:t.spark,demo:t.demo,state:Object.fromEntries(KEEP.map(k=>[k,t[k]]))};}
 const demoTrips=[];
 async function closeTrip(t){
   if(!t)return;await flushChunk(t);const s=summary(t);s.open=false;
@@ -786,11 +787,20 @@ async function exportTrip(id,share){
 }
 $('btnExportAll').onclick=async()=>{const trips=await getAll('trips');const out=[];for(const t of trips)out.push({...t,rows:await tripRows(t.id)});saveFile(`golf-logbook-${tripId()}.json`,JSON.stringify(out),'application/json');};
 
+// =============== outside temperature ===============
+// The car doesn't report outside air over OBD, so ask a weather service for where the phone is. Every 10 minutes at most.
+const weather={t:null,at:0};
+async function refreshWeather(){
+  if(gps.lat==null||Date.now()-weather.at<600000)return;weather.at=Date.now();
+  try{const r=await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${gps.lat.toFixed(2)}&longitude=${gps.lon.toFixed(2)}&current=temperature_2m`);
+    const j=await r.json();const t=j?.current?.temperature_2m;if(typeof t==='number'){weather.t=t;log('Outside: '+t+' °C');}}
+  catch(e){weather.at=Date.now()-540000;log('Weather: '+e.message);}
+}
 // =============== phone sensors ===============
 function startGps(){
   if(!navigator.geolocation){chip('chipGps','No GPS');return;}
   if(gpsWatch!=null)return;
-  gpsWatch=navigator.geolocation.watchPosition(p=>{const c=p.coords;gps={lat:+c.latitude.toFixed(6),lon:+c.longitude.toFixed(6),alt:c.altitude,speed:c.speed!=null?c.speed*3.6:null,heading:c.heading,at:performance.now()};chip('chipGps','GPS ±'+Math.round(c.accuracy)+' m','ok');},
+  gpsWatch=navigator.geolocation.watchPosition(p=>{const c=p.coords;gps={lat:+c.latitude.toFixed(6),lon:+c.longitude.toFixed(6),alt:c.altitude,speed:c.speed!=null?c.speed*3.6:null,heading:c.heading,at:performance.now()};chip('chipGps','GPS ±'+Math.round(c.accuracy)+' m','ok');refreshWeather();},
     e=>{chip('chipGps','GPS denied','warn');log('GPS: '+e.message);},{enableHighAccuracy:true,maximumAge:1000});
 }
 async function keepAwake(){try{if(!wake||wake.released)wake=await navigator.wakeLock?.request('screen');}catch(e){}}
@@ -859,7 +869,7 @@ function updateCockpit(now){
   const t=rec||paused;
   put$('mAvg','text',t&&t.km>0.3?(t.fuel/t.km*100).toFixed(1):'–');put$('mKm','text',t?t.km.toFixed(1):'–');
   put$('mVolt','text',live.volt!=null?live.volt.toFixed(1):'–');put$('mVolt','class','v'+(live.volt!=null&&((r??0)>500?live.volt<13.2:live.volt<12.2)?' warn':''));
-  put$('mIat','text',live.iat!=null?String(Math.round(live.iat)):'–');
+  put$('mIat','text',weather.t!=null?String(Math.round(weather.t)):'–');
 }
 
 // =============== demo ===============
