@@ -503,23 +503,26 @@ async function readFast(list){
   for(const p of list)await readPid(p);
 }
 async function readVoltage(){const r=await cmd('ATRV',1000);const m=(r||'').match(/(\d+(\.\d+)?)\s*V/i);if(m)setLive('volt',parseFloat(m[1]));}
-let slowIdx=0,cycles=0,hzT=performance.now();
+let replies=0,hzT=performance.now(),reqMs=0;
+// One question at a time, RPM every other question, and the screen updates after every answer.
+// Order: rpm, speed, rpm, boost, rpm, load, rpm, air flow, rpm, <one slow sensor or battery>
 async function poll(){
-  const fast=FAST.filter(p=>supported.has(p));
+  const has=p=>supported.has(p);
   const slow=[...supported].filter(p=>P[p]&&!FAST.includes(p)&&!ONCE.includes(p)&&p!=='42');
+  let slowIdx=0,step=0;
+  const others=['0D','0B','04','10'].filter(has);
   while(connected&&!demo){
-    const t0=performance.now();
-    // Ignition off: the adapter stays powered, the ECU goes quiet. Just check every 2 s whether the engine is back.
+    // Ignition off: the adapter stays powered, the ECU goes quiet. Check every 2 s whether the engine is back.
     if(fresh.rpm==null||performance.now()-fresh.rpm>6000){await readPid('0C');expireStale();tick();if(fresh.rpm==null||performance.now()-fresh.rpm>6000){await new Promise(r=>setTimeout(r,2000));continue;}}
-    await readFast(fast);
-    // one slow sensor per cycle; every 6th cycle the battery voltage straight from the adapter
-    if(slowIdx%6===5)await readVoltage();
-    else if(slow.length)await readPid(slow[slowIdx%slow.length]);
-    slowIdx++;
-    expireStale();
-    tick();
-    cycles++;if(performance.now()-hzT>3000){chip('chipHz',(cycles*1000/(performance.now()-hzT)).toFixed(1)+' Hz','ok');$('chipHz').hidden=false;cycles=0;hzT=performance.now();}
-    const dt=performance.now()-t0;if(dt<120)await new Promise(r=>setTimeout(r,120-dt));
+    const t0=performance.now();
+    if(step%2===0&&has('0C'))await readPid('0C');
+    else{const k=(step>>1)%(others.length+1);
+      if(k<others.length)await readPid(others[k]);
+      else{if(slowIdx%5===4)await readVoltage();else if(slow.length)await readPid(slow[slowIdx%slow.length]);slowIdx++;}}
+    step++;
+    reqMs=reqMs*0.9+(performance.now()-t0)*0.1;
+    expireStale();tick();
+    replies++;if(performance.now()-hzT>3000){chip('chipHz',(replies*1000/(performance.now()-hzT)).toFixed(1)+'/s · '+Math.round(reqMs)+' ms','ok');$('chipHz').hidden=false;replies=0;hzT=performance.now();}
   }
 }
 // A value the ECU hasn't confirmed for a while is dropped instead of repeated.
@@ -586,7 +589,7 @@ function renderTripState(){
   else{c.className='chip';c.textContent='No trip';i.textContent=connected?'starts with the engine':'';$('btnRec').disabled=true;$('chipRec').hidden=true;}
 }
 function sampleTrip(now){
-  if(!rec)return;const dt=Math.min(3,(now-rec.last)/1000);rec.last=now;
+  if(!rec)return;if(now-rec.last<500)return;const dt=Math.min(3,(now-rec.last)/1000);rec.last=now;
   const sp=live.speed;
   if(sp!=null)rec.km+=sp*dt/3600;
   if(live.lph!=null)rec.fuel+=live.lph*dt/3600;
