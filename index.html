@@ -85,9 +85,15 @@ details.legend p{margin:.6em 0;font-size:14px;color:var(--muted);max-width:65ch}
 details.legend b{color:var(--fg)}
 @media (max-width:420px){.strip{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media (orientation:landscape) and (max-height:600px){.tile{min-height:calc((100dvh - 150px)/2)}.tile .num{font-size:min(19vh,130px)}}
-body.drive-full .top{display:none}
-body.drive-full main{padding-top:8px}
-body.drive-full .tile{min-height:calc((100dvh - 120px)/2)}
+body.drive-full .top,body.drive-full .controls,body.drive-full .tripbar,body.drive-full .legend,body.drive-full #driveNote,body.drive-full #btNotice{display:none!important}
+body.drive-full main{padding-block:8px;padding-left:max(10px,env(safe-area-inset-left,0px),env(safe-area-inset-right,0px));padding-right:max(10px,env(safe-area-inset-left,0px),env(safe-area-inset-right,0px));height:100dvh}
+body.drive-full .cockpit{height:calc(100dvh - 16px - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px));grid-template-rows:1fr 1fr auto}
+body.drive-full .tile{min-height:0}
+@media (orientation:landscape){
+  body.drive-full .cockpit{grid-template-columns:repeat(4,minmax(0,1fr));grid-template-rows:1fr auto}
+  body.drive-full .tile .num{font-size:min(10vw,30vh)}
+  body.drive-full .strip .v{font-size:min(4.2vw,8vh)}
+}
 
 /* ---- Trips ---- */
 .trip{border-top:1px solid var(--line);padding:12px 0;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 10px}
@@ -112,7 +118,7 @@ input[type=number]{background:var(--panel2);border:1px solid var(--line);color:v
 <body>
 <div class="app">
   <div class="top">
-    <div class="brand">Golfozaur 3000<small>1.9 TDI BLS · v18</small></div>
+    <div class="brand">Golfozaur 3000<small>1.9 TDI BLS · v19</small></div>
     <div class="chips">
       <span class="chip" id="chipBt">Adapter off</span>
       <span class="chip" id="chipGps">GPS off</span>
@@ -142,7 +148,7 @@ input[type=number]{background:var(--panel2);border:1px solid var(--line);color:v
           <div class="bar" style="visibility:hidden"><i></i></div>
         </div>
         <div class="tile" id="tCool">
-          <div class="hd"><span class="lab">Coolant</span><span class="tag" id="cTag">–</span></div>
+          <div class="hd"><span class="lab" id="cLab">Coolant</span><span class="tag" id="cTag">–</span></div>
           <div class="num" id="cNum">–<small>°C</small></div>
           <div class="bar"><i id="cFill"></i></div>
         </div>
@@ -175,7 +181,7 @@ input[type=number]{background:var(--panel2);border:1px solid var(--line);color:v
         <summary>How it works</summary>
         <p><b>Trips run themselves.</b> Once the adapter is connected, a trip starts when the engine starts. Switch off for a fuel stop and the trip pauses. Start again within 15 minutes and it carries on. After 15 minutes off, it closes. Walk away from the car and the app simply loses the adapter. Keep the app open on screen while driving: Android stops web pages in the background.</p>
         <p><b>RPM.</b> The tag shows the most you should rev right now, which rises as the engine warms: 2000 below 40°C, 2500 below 60°C, 3000 below 75°C, 3500 below 85°C, then 4500. Blue: cold but fine. Green: warm and in the efficient zone, 1500–2600. Amber: close to the limit, or labouring at low revs under load. Solid red: over the limit.</p>
-        <p><b>Coolant.</b> Exact temperature. COLD below 60°C, WARMING to 80°C, READY from 80°C, HOT above 105°C.</p>
+        <p><b>Coolant.</b> Exact temperature. COLD below 60°C, WARMING to 80°C, READY from 80°C, HOT above 105°C. After two steady minutes between 80 and 100°C the tile switches to consumption, with the temperature and a tick in the corner. It switches back the moment the temperature leaves that band.</p>
         <p><b>Turbo.</b> OFF: cruising, idling or coasting. ON: working. FULL: near maximum, about 1.0–1.2 bar on your engine. When cold, the tag shows the boost to stay under, and the tile goes red past it. LOW: full throttle above 2000 rpm but under 0.6 bar for a few seconds, which can mean a boost leak or limp mode.</p>
         <p><b>Let it idle.</b> Appears when you stop after a stretch of real boost while moving, for 30–90 seconds depending on how hard the turbo worked. Revving in neutral doesn’t count.</p>
       </details>
@@ -817,7 +823,7 @@ const shownCache={};
 function put$(id,prop,val){const k=id+'.'+prop;if(shownCache[k]===val)return;shownCache[k]=val;const el=$(id);
   if(prop==='text')el.textContent=val;else if(prop==='html')el.innerHTML=val;else if(prop==='class')el.className=val;else if(prop==='hidden')el.hidden=val;else el.style[prop]=val;}
 // Turbo heat: builds only from real boost while moving, fades over a couple of minutes.
-let heat=0,heatT=null,lowSince=null,coolUntil=null,coolTotal=0;
+let heat=0,heatT=null,lowSince=null,coolUntil=null,coolTotal=0,steadySince=null;
 function turboHeat(now){
   const dt=heatT?Math.min(3,(now-heatT)/1000):0;heatT=now;
   const b=live.boost??0,sp=live.speed??0,r=live.rpm??0;
@@ -845,10 +851,23 @@ function updateCockpit(now){
   const gpsOk=gps.speed!=null&&gps.at&&now-gps.at<4000;
   const v=gpsOk?gps.speed:sp;
   put$('spdNum','html',(v!=null?Math.round(v):'–')+'<small>km/h</small>');put$('spdSrc','text',gpsOk?'GPS':(sp!=null?'car':'–'));
-  // Coolant
-  if(c!=null){const ph=c<60?'cold':c<80?'warm':c<=105?'ok':'hot';setTile('tCool',ph);
-    put$('cNum','html',Math.round(c)+'<small>°C</small>');put$('cTag','text',{cold:'cold',warm:'warming',ok:'ready',hot:'hot'}[ph]);put$('cFill','width',pct(c-20,90)+'%');}
-  else{setTile('tCool','');put$('cNum','html','–<small>°C</small>');put$('cTag','text','–');put$('cFill','width','0');}
+  // Coolant. Once it has sat in the normal band (80–100 °C) for 2 minutes it's not news any more:
+  // the tile turns into consumption, with a small coolant check in the corner, until the temperature leaves the band.
+  const inBand=c!=null&&c>=80&&c<=100;
+  steadySince=inBand?(steadySince??now):null;
+  const quiet=inBand&&now-steadySince>120000;
+  const cons=live.l100!=null?{v:Math.min(live.l100,99).toFixed(1),u:'L/100'}:live.lph!=null?{v:live.lph.toFixed(1),u:'L/h'}:{v:'–',u:'L/100'};
+  if(quiet){
+    setTile('tCool','');put$('cLab','text','Consumption');put$('cTag','text',Math.round(c)+'°C ✓');put$('cTag','color','var(--ok)');
+    put$('cNum','html',cons.v+'<small>'+cons.u+'</small>');put$('cFill','width',pct(live.l100??live.lph??0,15)+'%');
+    put$('kCons','text','Coolant °C');put$('mCons','text',String(Math.round(c)));
+  }else{
+    put$('cLab','text','Coolant');put$('cTag','color','');
+    put$('kCons','text','Now '+cons.u);put$('mCons','text',cons.v);
+    if(c!=null){const ph=c<60?'cold':c<80?'warm':c<=105?'ok':'hot';setTile('tCool',ph);
+      put$('cNum','html',Math.round(c)+'<small>°C</small>');put$('cTag','text',{cold:'cold',warm:'warming',ok:'ready',hot:'hot'}[ph]);put$('cFill','width',pct(c-20,90)+'%');}
+    else{setTile('tCool','');put$('cNum','html','–<small>°C</small>');put$('cTag','text','–');put$('cFill','width','0');}
+  }
   // Turbo
   const bl=boostLimit(c);
   if(b!=null){const bb=Math.max(0,b);let st='',w='off';
@@ -864,8 +883,6 @@ function updateCockpit(now){
   const left=coolUntil!=null?Math.max(0,(coolUntil-now)/1000):0;put$('cool','hidden',!left);
   if(left){put$('coolT','text',Math.floor(left/60)+':'+String(Math.ceil(left)%60).padStart(2,'0'));$('coolArc').setAttribute('stroke-dashoffset',String(226.2*(1-left/coolTotal)));}
   // Strip
-  if(live.l100!=null){put$('kCons','text','Now L/100');put$('mCons','text',Math.min(live.l100,99).toFixed(1));}
-  else{put$('kCons','text','Now L/h');put$('mCons','text',live.lph!=null?live.lph.toFixed(1):'–');}
   const t=rec||paused;
   put$('mAvg','text',t&&t.km>0.3?(t.fuel/t.km*100).toFixed(1):'–');put$('mKm','text',t?t.km.toFixed(1):'–');
   put$('mVolt','text',live.volt!=null?live.volt.toFixed(1):'–');put$('mVolt','class','v'+(live.volt!=null&&((r??0)>500?live.volt<13.2:live.volt<12.2)?' warn':''));
