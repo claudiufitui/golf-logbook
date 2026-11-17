@@ -332,6 +332,8 @@ async function tripRows(id){const ch=await getAll('chunks',IDBKeyRange.bound([id
 function btProblem(html){const n=$('btNotice');n.hidden=!html;n.innerHTML=html||'';}
 async function connect(){
   if(connected){wantConnected=false;try{device.gatt.disconnect();}catch(e){}return;}
+  if(linking){log('Connect tapped while already connecting');return;}
+  clearTimeout(reconTimer);
   if(!navigator.bluetooth){btProblem('<b>Bluetooth isn’t available here.</b> Use Chrome on Android, with Bluetooth and Location turned on.');return;}
   try{
     chip('chipBt','Choosing…','warn');
@@ -346,7 +348,15 @@ async function connect(){
     chip('chipBt','Error','bad');
   }
 }
+let linking=false,rxAttached=null;
+const rxDec=new TextDecoder();
+function onRx(e){rxBuf+=rxDec.decode(e.target.value);if(rxBuf.includes('>'))flush();}
 async function openLink(){
+  if(linking){log('Already connecting, skipped a second attempt');return;}
+  linking=true;
+  try{await openLinkInner();}finally{linking=false;}
+}
+async function openLinkInner(){
   chip('chipBt','Connecting…','warn');
   log('Connecting to '+(device.name||'device')+'…');
   const withTimeout=(p,ms,what)=>Promise.race([p,new Promise((_,rej)=>setTimeout(()=>rej(new Error(what+' took too long.')),ms))]);
@@ -367,7 +377,6 @@ async function openLink(){
   const known=recall('golf-svc');
   const rank=u=>u===known?2:u.startsWith('000018f0')?1:0;
   services.sort((x,y)=>rank(y.uuid)-rank(x.uuid));
-  const dec=new TextDecoder();const onRx=e=>{rxBuf+=dec.decode(e.target.value);if(rxBuf.includes('>'))flush();};
   for(const s of services){
     let chars=[];try{chars=await withTimeout(s.getCharacteristics(),5000,'Reading characteristics');}catch(e){log('Chars '+s.uuid.slice(4,8)+': '+e.message);continue;}
     let rx=null,tx=null;
@@ -375,15 +384,17 @@ async function openLink(){
     if(!rx||!tx){log('Service '+s.uuid.slice(4,8)+': no serial pair');continue;}
     log('Trying service '+s.uuid.slice(4,8)+' (rx '+rx.uuid.slice(4,8)+', tx '+tx.uuid.slice(4,8)+')…');
     try{await withTimeout(rx.startNotifications(),5000,'Starting notifications');}catch(e){log('  notifications: '+e.message);continue;}
-    rx.addEventListener('characteristicvaluechanged',onRx);
-    rxChar=rx;txChar=tx;connected=true;
-    const r=await cmd('ATI',3000);
+    if(rxAttached&&rxAttached!==rx)rxAttached.removeEventListener('characteristicvaluechanged',onRx);
+    rx.removeEventListener('characteristicvaluechanged',onRx);rx.addEventListener('characteristicvaluechanged',onRx);rxAttached=rx;
+    rxChar=rx;txChar=tx;connected=true;drainUntil=0;
+    let r=await cmd('ATI',3000);
+    if(!(r&&r.trim())){log('  no answer, waking the adapter…');await cmd('',800);r=await cmd('ATI',3000);}
     log('  ATI → '+clean(r));
     if(r&&r.trim()){store('golf-svc',s.uuid);break;}
-    rx.removeEventListener('characteristicvaluechanged',onRx);try{await rx.stopNotifications();}catch(e){}
+    rx.removeEventListener('characteristicvaluechanged',onRx);rxAttached=null;try{await rx.stopNotifications();}catch(e){}
     rxChar=txChar=null;connected=false;
   }
-  if(!rxChar){chip('chipBt','No answer','bad');btProblem('<b>Linked to the adapter, but it didn’t answer on any channel.</b> Unplug the adapter for 10 seconds, plug it back in, then try again. If it still fails, send Claude the adapter log from the Car tab.');try{device.gatt.disconnect();}catch(_){}wantConnected=false;return;}
+  if(!rxChar){chip('chipBt','No answer','bad');try{device.gatt.disconnect();}catch(_){}if(autoMode)return;btProblem('<b>Linked to the adapter, but it didn’t answer on any channel.</b> Unplug the adapter for 10 seconds, plug it back in, then try again. If it still fails, send Claude the adapter log from the Car tab.');try{device.gatt.disconnect();}catch(_){}wantConnected=false;return;}
   connected=true;btProblem('');chip('chipBt',device.name||'Adapter','ok');$('btnConnect').textContent='Disconnect';
   await initElm();
 }
