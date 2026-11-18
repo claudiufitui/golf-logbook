@@ -146,7 +146,7 @@ input[type=number]{background:var(--panel2);border:1px solid var(--line);color:v
 <body>
 <div class="app">
   <div class="top">
-    <div class="brand">Golfozaur 3000<small>1.9 TDI BLS · v20</small></div>
+    <div class="brand">Golfozaur 3000<small>1.9 TDI BLS · v21</small></div>
     <div class="chips">
       <span class="chip" id="chipBt">Adapter off</span>
       <span class="chip" id="chipGps">GPS off</span>
@@ -779,7 +779,8 @@ function sampleTrip(now){
   const rpm=live.rpm??0;
   if(rpm>300&&(sp??0)<2)rec.idleS+=dt;
   if(rpm>=2000&&(sp??0)>=60)rec.hotS+=dt;
-  if(rpm>600&&live.volt!=null)rec.minVolt=Math.min(rec.minVolt??99,live.volt);
+  // Ignore the first minute after a start: the glow plugs pull the voltage down on purpose.
+  if(rpm>600){rec.runS=(rec.runS||0)+dt;if(rec.runS>60&&live.volt!=null)rec.minVolt=Math.min(rec.minVolt??99,live.volt);}else rec.runS=0;
   if(rpm>0&&rpm<1300&&(live.load??0)>85&&(sp??0)>5)rec.lugS=(rec.lugS||0)+dt;
   rec.maxRpm=Math.max(rec.maxRpm,rpm);rec.maxBoost=Math.max(rec.maxBoost,live.boost??0);rec.maxSpeed=Math.max(rec.maxSpeed,sp??0);rec.maxCoolant=Math.max(rec.maxCoolant,live.coolant??-99);
   if(rec.warm80==null&&(live.coolant??0)>=80)rec.warm80=Math.round(rec.engineS);
