@@ -145,6 +145,7 @@ label.check input{width:20px;height:20px;accent-color:var(--accent)}
 .spark{grid-column:1/-1;width:100%;height:56px;display:block}
 .kv{display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 14px;font-size:14px}
 .kv dt{color:var(--muted)}.kv dd{margin:0;font-family:var(--mono);word-break:break-all}
+.vwtab{overflow-x:auto;margin-top:10px}.vwtab table{border-collapse:collapse;font-family:var(--mono);font-size:12px;white-space:nowrap}.vwtab td,.vwtab th{padding:4px 8px;border-bottom:1px solid var(--line);text-align:left}.vwtab th{color:var(--muted);font-weight:600}
 .pids{display:flex;flex-wrap:wrap;gap:6px}
 .log{font-family:var(--mono);font-size:11px;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px;max-height:300px;overflow:auto;white-space:pre-wrap;word-break:break-all}
 .dtc{font-family:var(--mono);font-weight:600;color:var(--warn)}
@@ -165,7 +166,7 @@ input[type=number]{background:var(--panel2);border:1px solid var(--line);color:v
 </div>
 <div class="app">
   <div class="top">
-    <div class="brand">Golfozaur 3000<small>1.9 TDI BLS · v24</small></div>
+    <div class="brand">Golfozaur 3000<small>1.9 TDI BLS · v25</small></div>
     <div class="chips">
       <span class="chip" id="chipBt">Adapter off</span>
       <span class="chip" id="chipGps">GPS off</span>
@@ -316,6 +317,14 @@ input[type=number]{background:var(--panel2);border:1px solid var(--line);color:v
         <div id="dtcOut" class="small" style="margin-top:10px"></div>
       </div>
       <div class="panel">
+        <h2>VW lab</h2>
+        <p class="small muted">VW’s own engine data (DPF soot, injectors, regeneration), beyond standard OBD. Read-only: it only asks, never writes, codes or resets. Park, engine idling, adapter connected. The report goes to Claude by itself.</p>
+        <div class="row"><button class="btn" id="btnVwTest">1. Test VW connection</button><button class="btn" id="btnVwScan">2. Scan all groups (~2–3 min)</button></div>
+        <div class="small mono" id="vwStatus" style="margin-top:8px"></div>
+        <pre class="log" id="vwSteps" style="margin-top:8px;max-height:220px"></pre>
+        <div id="vwOut"></div>
+      </div>
+      <div class="panel">
         <h2>Readiness monitors</h2>
         <div id="monitors" class="small muted">Connect to read.</div>
       </div>
@@ -408,7 +417,7 @@ function recall(k){try{return localStorage.getItem(k);}catch(e){return null;}}
 // =============== log ===============
 const logLines=[];
 function log(s){logLines.push(new Date().toTimeString().slice(0,8)+'  '+s);if(logLines.length>500)logLines.shift();const el=$('log');el.textContent=logLines.join('\n');el.scrollTop=el.scrollHeight;}
-$('btnCopyLog').onclick=async()=>{try{await navigator.clipboard.writeText(logLines.join('\n'));$('btnCopyLog').textContent='Copied';setTimeout(()=>$('btnCopyLog').textContent='Copy log',1500);}catch(e){}};
+$('btnCopyLog').onclick=async()=>{try{await navigator.clipboard.writeText(logLines.join('\n')+(window.__vwlog?.length?'\n\n--- VW lab ---\n'+window.__vwlog.join('\n'):''));$('btnCopyLog').textContent='Copied';setTimeout(()=>$('btnCopyLog').textContent='Copy log',1500);}catch(e){}};
 function chip(id,text,cls){const c=$(id);c.textContent=text;c.className='chip'+(cls?' '+cls:'');}
 
 // =============== views ===============
@@ -1097,6 +1106,137 @@ $('fillForm').onsubmit=async e=>{e.preventDefault();
 async function syncFills(){if(!gh.token)return;try{await ghPut('fills.json',JSON.stringify((await getAll('fills')).sort((a,b)=>a.at-b.at),null,1),'Fill-ups');}catch(e){log('Sync fills: '+e.message);}}
 setInterval(()=>{if(!driving&&!document.hidden&&!$('view-home').hidden)renderHome();},5000);
 
+// =============== VW lab: VW's own diagnostics (TP 2.0 channel + KWP2000), READ-ONLY ===============
+// The engine ECU (address 01) speaks VW's language on CAN: we ask the gateway for a channel on 0x200,
+// it tells us which IDs to use, then we read "measuring blocks" (service 21) — 4 values per group.
+// Only these requests are ever sent: channel setup/params/keep-alive/close, 10 89 (diagnostic session),
+// 1A 9B (identification) and 21 xx (read group). Nothing is written, coded or reset.
+const H2=n=>n.toString(16).padStart(2,'0').toUpperCase();
+const VW=window.__vwrun={busy:false,tx:0x740,rx:0x300,seq:0,rseq:null,log:[],retx:0,t1:'8A',results:{},ecuId:null,steps:[]};
+function vlog(s){window.__vwlog=VW.log;VW.log.push((performance.now()/1000).toFixed(2)+'  '+s);if(VW.log.length>30000)VW.log.splice(0,5000);}
+function vstep(s,ok){VW.steps.push((ok===false?'✗ ':ok?'✓ ':'· ')+s);vlog('== '+s);$('vwSteps').textContent=VW.steps.join('\n');log('VW lab: '+s);}
+function vframes(r){const fr=[];for(const l of lines(r)){const L=l.toUpperCase();if(!/^[0-9A-F]{5,}$/.test(L))continue;const b=[];for(let j=3;j+1<L.length;j+=2)b.push(parseInt(L.slice(j,j+2),16));fr.push({id:parseInt(L.slice(0,3),16),b});}return fr;}
+async function vsend(hex,count,timeout=1500){
+  const t0=performance.now();const r=await cmd(hex+(count?count.toString(16).toUpperCase():''),timeout);const ms=Math.round(performance.now()-t0);
+  vlog(`> ${hex}${count?' ['+count+']':''}   < ${clean(r)}   ${ms} ms`);VW.lastTx=performance.now();return {r,fr:vframes(r),ms};}
+async function vat(c,t=1500){const r=await cmd(c,t);vlog(c+' → '+clean(r));return clean(r);}
+// Open the channel to the engine ECU.
+async function vOpen(){
+  for(const c of ['ATWS','ATE0','ATL0','ATS0','ATH1','ATSP6','ATCAF0','ATCFC0','ATAL','ATAT1','ATST32'])await vat(c,c==='ATWS'?3000:1500);
+  await vat('ATSH200');
+  if((await vat('ATCRA201')).includes('?')){vstep('Adapter has no ATCRA, using ATCF/ATCM');await vat('ATCF201');await vat('ATCM7FF');VW.noCra=true;}
+  let ok=null;
+  for(let i=0;i<4&&!ok;i++){const {fr}=await vsend('01C00010000301',1,2000);
+    const f=fr.find(x=>x.id===0x201&&(x.b[1]&0xF0)===0xD0);
+    if(f){if(f.b[1]!==0xD0){vstep('ECU refused the channel (code '+H2(f.b[1])+')',false);return false;}ok=f;}
+    else await new Promise(r=>setTimeout(r,400));}
+  if(!ok){vstep('No answer to the channel request on 0x200',false);return false;}
+  const idA=((ok.b[3]&7)<<8)|ok.b[2],idB=((ok.b[5]&7)<<8)|ok.b[4];
+  // Documented: the ECU sends on the first ID (0x300), we send on the second (0x740). If that gets no answer, try it swapped.
+  for(const [rx,tx] of [[idA,idB],[idB,idA]]){
+    VW.rx=rx;VW.tx=tx;
+    await vat('ATSH'+tx.toString(16).padStart(3,'0').toUpperCase());
+    if(VW.noCra){await vat('ATCF'+rx.toString(16).padStart(3,'0').toUpperCase());}else await vat('ATCRA'+rx.toString(16).padStart(3,'0').toUpperCase());
+    const {fr}=await vsend('A00F'+VW.t1+'FF32FF',1);
+    const p=fr.find(x=>x.id===rx&&x.b[0]===0xA1);
+    if(p){vstep(`Channel open: we send on ${tx.toString(16)}, the ECU answers on ${rx.toString(16)}. ECU timing ${p.b.map(H2).join(' ')}`,true);VW.seq=0;VW.rseq=null;VW.params=p.b;return true;}
+  }
+  vstep('Channel offered, but the ECU ignored the timing request',false);return false;
+}
+async function vKeep(){if(performance.now()-(VW.lastTx||0)>400){const {fr}=await vsend('A3',1);return fr.some(x=>x.b[0]===0xA1);}return true;}
+async function vClose(){try{await vsend('A8',1,800);}catch(e){}}
+// Send one KWP request (≤5 bytes) and collect the answer, acknowledging the ECU's packets.
+async function vreq(pl,count){
+  const f=[0x10|VW.seq,0,pl.length,...pl];VW.seq=(VW.seq+1)&15;
+  let {fr}=await vsend(f.map(H2).join(''),count);
+  let data=[],need=null,acked=false;
+  for(let round=0;round<10;round++){
+    let ack=null,done=false;
+    for(const {id,b} of fr){if(id!==VW.rx||!b.length)continue;const op=b[0]>>4,sq=b[0]&15;
+      if(op===0xB||op===0x9){acked=true;continue;}
+      if(b[0]===0xA8){VW.dead=true;vlog('ECU closed the channel');return null;}
+      if(op===0xA)continue;
+      if(op>3)continue;
+      if(VW.rseq!=null&&sq!==VW.rseq){const back=(VW.rseq-sq+16)&15;if(back>0&&back<8){VW.retx++;vlog('(repeat of packet '+sq+', ignored)');if(op===0||op===1)ack=(sq+1)&15;continue;}vlog('(packet '+sq+' out of order, expected '+VW.rseq+')');}
+      VW.rseq=(sq+1)&15;data.push(...b.slice(1));
+      if(need==null&&data.length>=2)need=((data[0]&0x7F)<<8)|data[1];
+      if(op===0||op===1)ack=(sq+1)&15;
+      if(op===1||op===3)done=true;}
+    if(done&&need!=null&&data.length-2>=need){
+      const msg=data.slice(2,2+need);data=[];need=null;
+      if(ack!=null)await vsend('B'+ack.toString(16).toUpperCase(),0,600);
+      if(msg[0]===0x7F&&msg[2]===0x78){vlog('(ECU busy, waiting)');({fr}=await vsend('A3',0,1500));continue;}
+      return msg;}
+    // Not complete yet: acknowledge what needs it (which also opens a window for the rest), else ping.
+    if(!acked&&!fr.length&&round>1)return null;
+    ({fr}=await (ack!=null?vsend('B'+ack.toString(16).toUpperCase(),0,1500):vsend('A3',0,1500)));
+  }
+  return null;
+}
+// Value formulas for measuring blocks: [type, a, b] → value. Best known guesses; the raw bytes are always kept.
+const VWF={1:(a,b)=>[a*b/5,'rpm'],2:(a,b)=>[a*.002*b,'%'],3:(a,b)=>[.002*a*b,'°'],4:(a,b)=>[Math.abs(b-127)*.01*a,'°'],5:(a,b)=>[a*(b-100)*.1,'°C'],6:(a,b)=>[.001*a*b,'V'],7:(a,b)=>[.01*a*b,'km/h'],8:(a,b)=>[.1*a*b,''],9:(a,b)=>[(b-127)*.02*a,'°'],10:(a,b)=>[b?'WARM':'COLD',''],11:(a,b)=>[.0001*a*(b-128)+1,''],12:(a,b)=>[.001*a*b,'Ω'],13:(a,b)=>[(b-127)*.001*a,'mm'],14:(a,b)=>[.005*a*b,'bar'],15:(a,b)=>[.01*a*b,'ms'],16:(a,b)=>[(a&b).toString(2).padStart(8,'0'),'bits'],17:(a,b)=>[String.fromCharCode(a,b),''],18:(a,b)=>[.04*a*b,'mbar'],19:(a,b)=>[a*b*.01,'l'],20:(a,b)=>[a*(b-128)/128,'%'],21:(a,b)=>[.001*a*b,'V'],22:(a,b)=>[.001*a*b,'ms'],23:(a,b)=>[b/256*a,'%'],24:(a,b)=>[.001*a*b,'A'],25:(a,b)=>[b*1.421+a/182,'g/s'],26:(a,b)=>[b-a,'°C'],27:(a,b)=>[Math.abs(b-128)*.01*a,'°'],31:(a,b)=>[b/2560*a,'°C'],33:(a,b)=>[a?100*b/a:0,'%'],34:(a,b)=>[(b-128)*.01*a,'kW'],35:(a,b)=>[.01*a*b,'l/h'],36:(a,b)=>[a*2560+b*10,'km'],37:(a,b)=>[b,'state'],39:(a,b)=>[b/256*a,'mg/str'],47:(a,b)=>[(b-128)*a,'ms'],48:(a,b)=>[b+a*255,''],49:(a,b)=>[b/4*a*.1,'mg/h'],50:(a,b)=>[a?(b-128)/(.01*a):0,'mbar'],51:(a,b)=>[(b-128)/255*a,'mg/str'],52:(a,b)=>[b*.02*a-a,'Nm'],53:(a,b)=>[(b-128)*1.4222+.006*a,'g/s'],54:(a,b)=>[a*256+b,''],55:(a,b)=>[a*b/200,'s'],56:(a,b)=>[a*256+b,''],59:(a,b)=>[(a*256+b)/32768,'g/s'],60:(a,b)=>[(a*256+b)*.01,'s'],64:(a,b)=>[a+b,'Ω'],65:(a,b)=>[.01*a*(b-127),'mm'],66:(a,b)=>[a*b/511.12,'V']};
+function vdec([t,a,b]){const f=VWF[t];if(!f)return `? (${H2(t)} ${H2(a)} ${H2(b)})`;const [v,u]=f(a,b);return (typeof v==='number'?(Math.abs(v)>=100?Math.round(v):+v.toFixed(2)):v)+(u?' '+u:'');}
+async function vGroup(g){
+  const m=await vreq([0x21,g],4);
+  if(!m)return {g,err:'no answer'};
+  if(m[0]===0x7F)return {g,err:'refused '+H2(m[2]??0)};
+  if(m[0]!==0x61||m[1]!==g)return {g,err:'odd reply '+m.map(H2).join(' ')};
+  const raw=[];for(let i=2;i+2<m.length;i+=3)raw.push([m[i],m[i+1],m[i+2]]);
+  return {g,raw,dec:raw.map(vdec)};
+}
+function vShow(){
+  const rows=Object.values(VW.results).filter(r=>r.raw).sort((a,b)=>a.g-b.g);
+  $('vwOut').innerHTML=(VW.ecuId?`<p class="small"><b>ECU:</b> <span class="mono">${VW.ecuId.replace(/</g,'')}</span></p>`:'')+
+    (rows.length?`<div class="vwtab"><table><tr><th>Group</th><th>1</th><th>2</th><th>3</th><th>4</th></tr>${rows.map(r=>`<tr><td>${String(r.g).padStart(3,'0')}</td>${r.dec.map(d=>`<td>${d}</td>`).join('')}</tr>`).join('')}</table></div><p class="small muted">Units are a first guess. Claude checks them against the raw bytes.</p>`:'');
+}
+async function vUpload(kind){
+  const id=tripId();const rep={kind,at:new Date().toISOString(),app:document.querySelector('.brand small')?.textContent,ecuId:VW.ecuId,channel:{tx:VW.tx,rx:VW.rx,params:VW.params,t1:VW.t1},repeats:VW.retx,steps:VW.steps,results:VW.results,log:VW.log};
+  store('golf-vw',JSON.stringify({at:rep.at,ecuId:rep.ecuId,results:VW.results}));
+  if(!gh.token){vstep('No GitHub key: use Copy log in the Car tab to send it');return;}
+  try{await ghPut(`lab/${id}-${kind}.json`,JSON.stringify(rep,null,1),`VW lab ${kind} ${id}`);vstep('Report sent to Claude (lab/'+id+'-'+kind+'.json)',true);}catch(e){vstep('Could not send the report: '+e.message,false);}
+}
+async function vRun(kind){
+  if(VW.busy)return;if(!connected){$('vwSteps').textContent='Connect to the adapter first, with the engine idling.';return;}
+  VW.busy=true;VW.steps=[];VW.log=[];VW.retx=0;VW.dead=false;$('btnVwTest').disabled=$('btnVwScan').disabled=true;
+  pollGen++;await new Promise(r=>setTimeout(r,600));   // stop normal polling
+  vstep(kind==='scan'?'Full scan: groups 1 to 255':'Connection test');
+  let opened=false;
+  try{
+    for(const t1 of ['8A','CA']){VW.t1=t1;
+      if(!(await vOpen()))continue;
+      const s=await vreq([0x10,0x89],2);
+      if(s&&s[0]===0x50){vstep('Diagnostic session started (10 89)',true);opened=true;break;}
+      vstep('Session request answered '+(s?s.map(H2).join(' '):'with nothing')+(t1==='8A'?', retrying with a slower timing':''),false);
+      if(s&&s[0]===0x7F){vstep('Trying to read without a session anyway');opened=true;break;}
+      await vClose();
+    }
+    if(!opened){vstep('Could not open VW diagnostics. The report will tell Claude why.',false);}
+    else{
+      const id=await vreq([0x1A,0x9B]);
+      if(id&&id[0]===0x5A){VW.ecuId=String.fromCharCode(...id.slice(2)).replace(/[^\x20-\x7E]/g,' ').replace(/\s+/g,' ').trim();vstep('ECU: '+VW.ecuId,true);}
+      else vstep('Identification answered '+(id?id.map(H2).join(' '):'with nothing'),false);
+      const groups=kind==='scan'?Array.from({length:255},(_,i)=>i+1):[1,2,3,4,5,6,7,8,11,13];
+      let fails=0,reopen=0,good=0;
+      for(let i=0;i<groups.length;i++){const g=groups[i];
+        if(!connected){vstep('Adapter lost, stopping',false);break;}
+        $('vwStatus').textContent=`Reading group ${g} (${i+1}/${groups.length}) · ${good} answered`;
+        const r=await vGroup(g);VW.results[g]=r;
+        if(r.raw){good++;fails=0;vShow();}
+        else if(r.err==='no answer'||VW.dead){fails++;
+          if(fails>=3){if(reopen++>=3){vstep('Channel kept dropping, stopping at group '+g,false);break;}
+            vstep('Channel dropped at group '+g+', reopening');await vClose();VW.dead=false;fails=0;
+            if(!(await vOpen())||!(await vreq([0x10,0x89],2))){vstep('Could not reopen',false);break;}i-=3;}}
+        await vKeep();}
+      vstep(`${good} of ${groups.length} groups answered${VW.retx?`, ${VW.retx} repeated packets (our acknowledgements were late)`:''}`,good>0);
+      await vClose();
+    }
+  }catch(e){vstep('Error: '+e.message,false);}
+  $('vwStatus').textContent='';
+  await vUpload(kind);
+  VW.busy=false;$('btnVwTest').disabled=$('btnVwScan').disabled=false;
+  if(connected){vlog('Back to normal reading');await initElm();}
+}
+
 // =============== wire up ===============
 $('btnConnect').onclick=connect;
 $('transportSel').value=transport;
@@ -1104,6 +1244,7 @@ if(!navigator.serial){$('transportSel').querySelector('[value=serial]').disabled
 $('transportSel').onchange=()=>{if(connected){wantConnected=false;dropLink();}setTransport($('transportSel').value);log('Connection type: '+transport);};
 $('btnRec').onclick=endTripNow;
 $('btnDtc').onclick=readDtc;
+$('btnVwTest').onclick=()=>vRun('test');$('btnVwScan').onclick=()=>vRun('scan');
 // Drive mode: the big cockpit, full screen. Leaving full screen (back gesture or ✕) brings you home.
 let driving=false;
 async function enterDrive(){driving=true;document.body.classList.add('drive-full');
