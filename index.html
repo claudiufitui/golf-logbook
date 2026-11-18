@@ -59,9 +59,10 @@ h2{font-family:var(--display);font-weight:600;font-size:14px;text-transform:uppe
 .tile .tag{font-family:var(--display);font-weight:700;font-size:16px;letter-spacing:.08em;text-transform:uppercase;padding:2px 10px;border-radius:8px;background:var(--panel2);color:var(--muted);white-space:nowrap}
 .tile .num{font-family:var(--display);font-weight:700;font-size:min(40cqw,48cqh);line-height:.88;font-variant-numeric:tabular-nums;letter-spacing:-.02em;color:var(--fg);white-space:nowrap;display:flex;flex-direction:column;align-items:flex-start}
 .tile .num small{display:block;font-size:max(13px,.22em);font-weight:600;color:var(--muted);letter-spacing:.04em;margin-top:.25em;line-height:1}
-.tile .bar{position:relative;height:10px;border-radius:5px;background:var(--panel2);overflow:hidden}
+.tile .bar{position:relative;height:18px;border-radius:9px;background:var(--panel2);overflow:hidden}
 .tile .bar i{position:absolute;inset:0 auto 0 0;width:0;background:var(--fg);transition:width .15s linear}
-.tile .bar b{position:absolute;top:0;bottom:0;width:4px;margin-left:-2px;background:var(--fg)}
+.tile .bar{overflow:visible}.tile .bar i{border-radius:9px}
+.tile .bar b{position:absolute;top:-6px;bottom:-6px;width:8px;margin-left:-4px;border-radius:3px;background:var(--fg);box-shadow:0 0 0 2px var(--panel)}
 /* states: tint the whole tile */
 .tile.s-cold{background:color-mix(in srgb,var(--cool) 16%,var(--panel));border-color:color-mix(in srgb,var(--cool) 45%,transparent)}.tile.s-cold .num,.tile.s-cold .tag{color:var(--cool)}
 .tile.s-warm{background:color-mix(in srgb,var(--warmup) 14%,var(--panel));border-color:color-mix(in srgb,var(--warmup) 45%,transparent)}.tile.s-warm .num,.tile.s-warm .tag{color:var(--warmup)}
@@ -82,10 +83,6 @@ h2{font-family:var(--display);font-weight:600;font-size:14px;text-transform:uppe
 .strip .v.warn{color:var(--warn)}
 .tripbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:12px}
 .controls{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
-details.legend{margin-top:14px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 14px}
-details.legend summary{cursor:pointer;font-weight:600}
-details.legend p{margin:.6em 0;font-size:14px;color:var(--muted);max-width:65ch}
-details.legend b{color:var(--fg)}
 @media (max-width:420px){.strip{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media (orientation:landscape) and (max-height:600px){.tile{min-height:calc((100dvh - 150px)/2)}.tile .num{font-size:min(19vh,130px)}}
 body.drive-full .top{display:none!important}
@@ -168,7 +165,7 @@ input[type=number]{background:var(--panel2);border:1px solid var(--line);color:v
 </div>
 <div class="app">
   <div class="top">
-    <div class="brand">Golfozaur 3000<small>1.9 TDI BLS · v22</small></div>
+    <div class="brand">Golfozaur 3000<small>1.9 TDI BLS · v23</small></div>
     <div class="chips">
       <span class="chip" id="chipBt">Adapter off</span>
       <span class="chip" id="chipGps">GPS off</span>
@@ -234,18 +231,8 @@ input[type=number]{background:var(--panel2);border:1px solid var(--line);color:v
 
       <div class="controls">
         <button class="btn" id="btnRec" disabled>End trip now</button>
-        <button class="btn" id="btnDemo">Demo</button>
       </div>
       <p class="muted small" id="driveNote"></p>
-      <details class="legend">
-        <summary>How it works</summary>
-        <p><b>Trips run themselves.</b> Once the adapter is connected, a trip starts when the engine starts. Switch off for a fuel stop and the trip pauses. Start again within 15 minutes and it carries on. After 15 minutes off, it closes. Walk away from the car and the app simply loses the adapter. Keep the app open on screen while driving: Android stops web pages in the background.</p>
-        <p><b>RPM.</b> The tag shows the most you should rev right now, which rises as the engine warms: 2000 below 40°C, 2500 below 60°C, 3000 below 75°C, 3500 below 85°C, then 4500. Blue: cold but fine. Green: warm and in the efficient zone, 1500–2600. Amber: close to the limit, or labouring at low revs under load. Solid red: over the limit.</p>
-        <p><b>Coolant.</b> Exact temperature. COLD below 60°C, WARMING to 80°C, READY from 80°C, HOT above 105°C.</p>
-        <p><b>Turbo.</b> OFF: cruising, idling or coasting. ON: working. FULL: near maximum, about 1.0–1.2 bar on your engine. When cold, the tag shows the boost to stay under, and the tile goes red past it. LOW: full throttle above 2000 rpm but under 0.6 bar for a few seconds, which can mean a boost leak or limp mode.</p>
-        <p><b>Next to navigation.</b> Put the app in split screen with Maps or Waze and make it as small as you like. It switches to a one-line strip (recording dot, trip time, coolant, RPM, boost) and keeps logging, because Android still counts it as open.</p>
-        <p><b>Let it idle.</b> Appears when you stop after a stretch of real boost while moving, for 30–90 seconds depending on how hard the turbo worked. Revving in neutral doesn’t count.</p>
-      </details>
     </section>
 
     <!-- DRIVE MODE -->
@@ -1078,23 +1065,12 @@ $('fillForm').onsubmit=async e=>{e.preventDefault();
 async function syncFills(){if(!gh.token)return;try{await ghPut('fills.json',JSON.stringify((await getAll('fills')).sort((a,b)=>a.at-b.at),null,1),'Fill-ups');}catch(e){log('Sync fills: '+e.message);}}
 setInterval(()=>{if(!driving&&!document.hidden&&!$('view-home').hidden)renderHome();},5000);
 
-// =============== demo ===============
-let demoTimer=null,dT=0;
-function toggleDemo(){
-  demo=!demo;$('btnDemo').textContent=demo?'Stop demo':'Demo';
-  if(demo){$('driveNote').textContent='Demo: invented values, not your car.';dT=0;live.coolant=18;live.iat=12;live.volt=14.2;supported=new Set(['0C','0D','0B','04','10','05','0F','42','11']);
-    demoTimer=setInterval(()=>{dT+=0.25;const c=Math.max(0,Math.sin(dT/12)),acc=Math.max(0,Math.cos(dT/12));live.speed=Math.round(c*95);
-      live.rpm=830+c*1700+acc*900*(c>0.1?1:0)+Math.random()*30;live.load=18+acc*60*(c>0.05?1:0)+c*10;live.map=99+acc*95*(c>0.05?1:0)+c*20;live.maf=8+live.load*0.6;live.coolant=Math.min(92,live.coolant+0.35);live.iat=12+c*8;gps={speed:live.speed*1.02,at:performance.now()};tick();},250);}
-  else{clearInterval(demoTimer);const t=rec||paused;rec=null;paused=null;if(t)closeTrip(t);for(const k in live)delete live[k];supported=new Set();updateCockpit(performance.now());renderTripState(true);$('driveNote').textContent='';if(connected)poll();}
-}
-
 // =============== wire up ===============
 $('btnConnect').onclick=connect;
 $('transportSel').value=transport;
 if(!navigator.serial){$('transportSel').querySelector('[value=serial]').disabled=true;$('transportHint').textContent='This browser can’t use classic Bluetooth, so the app uses Bluetooth LE.';}
 $('transportSel').onchange=()=>{if(connected){wantConnected=false;dropLink();}setTransport($('transportSel').value);log('Connection type: '+transport);};
 $('btnRec').onclick=endTripNow;
-$('btnDemo').onclick=toggleDemo;
 $('btnDtc').onclick=readDtc;
 // Drive mode: the big cockpit, full screen. Leaving full screen (back gesture or ✕) brings you home.
 let driving=false;
