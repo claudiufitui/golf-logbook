@@ -166,7 +166,7 @@ input[type=number]{background:var(--panel2);border:1px solid var(--line);color:v
 </div>
 <div class="app">
   <div class="top">
-    <div class="brand">Golfozaur 3000<small>1.9 TDI BLS · v25</small></div>
+    <div class="brand">Golfozaur 3000<small>1.9 TDI BLS · v26</small></div>
     <div class="chips">
       <span class="chip" id="chipBt">Adapter off</span>
       <span class="chip" id="chipGps">GPS off</span>
@@ -1175,6 +1175,9 @@ async function vreq(pl,count){
 }
 // Value formulas for measuring blocks: [type, a, b] → value. Best known guesses; the raw bytes are always kept.
 const VWF={1:(a,b)=>[a*b/5,'rpm'],2:(a,b)=>[a*.002*b,'%'],3:(a,b)=>[.002*a*b,'°'],4:(a,b)=>[Math.abs(b-127)*.01*a,'°'],5:(a,b)=>[a*(b-100)*.1,'°C'],6:(a,b)=>[.001*a*b,'V'],7:(a,b)=>[.01*a*b,'km/h'],8:(a,b)=>[.1*a*b,''],9:(a,b)=>[(b-127)*.02*a,'°'],10:(a,b)=>[b?'WARM':'COLD',''],11:(a,b)=>[.0001*a*(b-128)+1,''],12:(a,b)=>[.001*a*b,'Ω'],13:(a,b)=>[(b-127)*.001*a,'mm'],14:(a,b)=>[.005*a*b,'bar'],15:(a,b)=>[.01*a*b,'ms'],16:(a,b)=>[(a&b).toString(2).padStart(8,'0'),'bits'],17:(a,b)=>[String.fromCharCode(a,b),''],18:(a,b)=>[.04*a*b,'mbar'],19:(a,b)=>[a*b*.01,'l'],20:(a,b)=>[a*(b-128)/128,'%'],21:(a,b)=>[.001*a*b,'V'],22:(a,b)=>[.001*a*b,'ms'],23:(a,b)=>[b/256*a,'%'],24:(a,b)=>[.001*a*b,'A'],25:(a,b)=>[b*1.421+a/182,'g/s'],26:(a,b)=>[b-a,'°C'],27:(a,b)=>[Math.abs(b-128)*.01*a,'°'],31:(a,b)=>[b/2560*a,'°C'],33:(a,b)=>[a?100*b/a:0,'%'],34:(a,b)=>[(b-128)*.01*a,'kW'],35:(a,b)=>[.01*a*b,'l/h'],36:(a,b)=>[a*2560+b*10,'km'],37:(a,b)=>[b,'state'],39:(a,b)=>[b/256*a,'mg/str'],47:(a,b)=>[(b-128)*a,'ms'],48:(a,b)=>[b+a*255,''],49:(a,b)=>[b/4*a*.1,'mg/h'],50:(a,b)=>[a?(b-128)/(.01*a):0,'mbar'],51:(a,b)=>[(b-128)/255*a,'mg/str'],52:(a,b)=>[b*.02*a-a,'Nm'],53:(a,b)=>[(b-128)*1.4222+.006*a,'g/s'],54:(a,b)=>[a*256+b,''],55:(a,b)=>[a*b/200,'s'],56:(a,b)=>[a*256+b,''],59:(a,b)=>[(a*256+b)/32768,'g/s'],60:(a,b)=>[(a*256+b)*.01,'s'],64:(a,b)=>[a+b,'Ω'],65:(a,b)=>[.01*a*(b-127),'mm'],66:(a,b)=>[a*b/511.12,'V']};
+Object.assign(VWF,{8:(a,b)=>[(a<<8|b).toString(2).padStart(16,'0'),'bits'],20:(a,b)=>[a*b/128-1,'%'],33:(a,b)=>[a?100*b/a:100*b,'%'],37:(a,b)=>[(a<<8|b).toString(2).padStart(16,'0'),'bits'],49:(a,b)=>[a*b/40,'mg/str'],81:(a,b)=>[(a*112000+b*436)/1000,'°CF'],94:(a,b)=>[a*(b/50-1),'Nm']});
+// What each group means on 1.9 PD EDC16 engines (VW label data for this family; checked against your car after the scan).
+const VWG={1:'Idle: rpm · fuel mg/str · inj. duration · coolant',2:'rpm · pedal · status · coolant',3:'rpm · air specified · air actual · EGR duty',4:'rpm · injection start · duration · torsion',5:'Start: rpm · start quantity · sync · coolant',7:'fuel temp · – · intake air · coolant',8:'rpm · torque wanted · torque limit · smoke limit',10:'air mass · ATMOSPHERIC pressure · boost · pedal',11:'rpm · boost specified · boost actual · N75 turbo duty',12:'glow status · pre-glow s · BATTERY V · coolant',13:'Injector correction cyl 1 · 2 · 3 · 4',15:'rpm · TORQUE · FUEL L/H · torque wanted',16:'ALTERNATOR load · – · – · voltage',18:'Injector status cyl 1–4',23:'Injector timing deviation cyl 1–4',62:'coolant engine · coolant RADIATOR (thermostat test) · outside · intake',64:'coolant · radiator outlet · fan duty',67:'temp before turbo · temp in DPF · DPF pressure diff · offset',68:'DPF LOAD % · soot/ash g · learned',69:'DPF regeneration status',70:'regen status · regen time · failed regens · successful regens',71:'rpm · post-injection mg · post-inj. start · duration',73:'fuel since regen · KM SINCE REGEN · time since regen · DPF load %',74:'rpm · temp before turbo · lambda · offset',75:'temp before turbo · temp before DPF · DPF load % · temp after DPF'};
 function vdec([t,a,b]){const f=VWF[t];if(!f)return `? (${H2(t)} ${H2(a)} ${H2(b)})`;const [v,u]=f(a,b);return (typeof v==='number'?(Math.abs(v)>=100?Math.round(v):+v.toFixed(2)):v)+(u?' '+u:'');}
 async function vGroup(g){
   const m=await vreq([0x21,g],4);
@@ -1187,7 +1190,7 @@ async function vGroup(g){
 function vShow(){
   const rows=Object.values(VW.results).filter(r=>r.raw).sort((a,b)=>a.g-b.g);
   $('vwOut').innerHTML=(VW.ecuId?`<p class="small"><b>ECU:</b> <span class="mono">${VW.ecuId.replace(/</g,'')}</span></p>`:'')+
-    (rows.length?`<div class="vwtab"><table><tr><th>Group</th><th>1</th><th>2</th><th>3</th><th>4</th></tr>${rows.map(r=>`<tr><td>${String(r.g).padStart(3,'0')}</td>${r.dec.map(d=>`<td>${d}</td>`).join('')}</tr>`).join('')}</table></div><p class="small muted">Units are a first guess. Claude checks them against the raw bytes.</p>`:'');
+    (rows.length?`<div class="vwtab"><table><tr><th>Group</th><th>1</th><th>2</th><th>3</th><th>4</th><th>Probably</th></tr>${rows.map(r=>`<tr><td>${String(r.g).padStart(3,'0')}</td>${r.dec.map(d=>`<td>${d}</td>`).join('')}<td class="muted">${VWG[r.g]||''}</td></tr>`).join('')}</table></div><p class="small muted">Units are a first guess. Claude checks them against the raw bytes.</p>`:'');
 }
 async function vUpload(kind){
   const id=tripId();const rep={kind,at:new Date().toISOString(),app:document.querySelector('.brand small')?.textContent,ecuId:VW.ecuId,channel:{tx:VW.tx,rx:VW.rx,params:VW.params,t1:VW.t1},repeats:VW.retx,steps:VW.steps,results:VW.results,log:VW.log};
@@ -1215,7 +1218,7 @@ async function vRun(kind){
       const id=await vreq([0x1A,0x9B]);
       if(id&&id[0]===0x5A){VW.ecuId=String.fromCharCode(...id.slice(2)).replace(/[^\x20-\x7E]/g,' ').replace(/\s+/g,' ').trim();vstep('ECU: '+VW.ecuId,true);}
       else vstep('Identification answered '+(id?id.map(H2).join(' '):'with nothing'),false);
-      const groups=kind==='scan'?Array.from({length:255},(_,i)=>i+1):[1,2,3,4,5,6,7,8,11,13];
+      const groups=kind==='scan'?Array.from({length:255},(_,i)=>i+1):[1,3,10,11,12,13,15,16,62,68,70,73,75];
       let fails=0,reopen=0,good=0;
       for(let i=0;i<groups.length;i++){const g=groups[i];
         if(!connected){vstep('Adapter lost, stopping',false);break;}
