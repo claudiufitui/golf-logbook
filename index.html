@@ -165,7 +165,7 @@ input[type=number]{background:var(--panel2);border:1px solid var(--line);color:v
 </div>
 <div class="app">
   <div class="top">
-    <div class="brand">Golfozaur 3000<small>1.9 TDI BLS · v23</small></div>
+    <div class="brand">Golfozaur 3000<small>1.9 TDI BLS · v24</small></div>
     <div class="chips">
       <span class="chip" id="chipBt">Adapter off</span>
       <span class="chip" id="chipGps">GPS off</span>
@@ -560,7 +560,7 @@ async function openLinkInner(){
   await initElm();
 }
 function onDisconnect(){
-  connected=false;chip('chipBt',parkedSince?'Car parked':'Adapter lost',parkedSince?'':'warn');$('btnConnect').textContent='Connect adapter';$('btnDtc').disabled=true;
+  connected=false;$('chipHz').hidden=true;chip('chipBt',parkedSince?'Car parked':'Adapter lost',parkedSince?'':'warn');$('btnConnect').textContent='Connect adapter';$('btnDtc').disabled=true;
   log('Adapter disconnected');
   for(const k in live)delete live[k];
   if(wantConnected)scheduleReconnect();
@@ -680,8 +680,23 @@ const fresh={};   // when each field last got a real answer
 function setLive(k,v){live[k]=v;fresh[k]=performance.now();}
 let suffix='';
 async function readPid(p){const r=await cmd('01'+p+suffix,1200);const b=payload(r,'41',p);if(!b||b.length<P[p].b)return false;setLive(P[p].k,P[p].f(b[0],b[1],b[2],b[3]));return true;}
-async function readVoltage(){const r=await cmd('ATRV',1000);const m=(r||'').match(/(\d+(\.\d+)?)\s*V/i);if(m)setLive('volt',parseFloat(m[1]));}
-let replies=0,hzT=performance.now(),reqMs=0,pollGen=0,offSince=null;
+async function readVoltage(){const r=await cmd('ATRV',1000);const m=(r||'').match(/(\d+(\.\d+)?)\s*V/i);if(m){const v=parseFloat(m[1]);setLive('volt',v);return v;}return null;}
+// Battery: while the engine is off we read the voltage several times a second, so the dip when you
+// turn the key (glow plugs, then the starter) is caught. At start: resting voltage and lowest crank voltage.
+let vbuf=[],pendingStart=null;
+function noteStart(){
+  const now=Date.now();vbuf=vbuf.filter(x=>now-x.t<180000);
+  if(vbuf.length<5){vbuf=[];return;}
+  const vs=vbuf.map(x=>x.v).sort((a,b)=>a-b);
+  const restV=vs[Math.floor(vs.length*0.9)];
+  const crank=vbuf.filter(x=>now-x.t<20000);const crankV=crank.length?Math.min(...crank.map(x=>x.v)):null;
+  const keyOn=vbuf.find(x=>x.v<restV-0.3);
+  pendingStart={at:now,restV,crankV,keyS:keyOn?Math.round((now-keyOn.t)/1000):null,n:vbuf.length};
+  log(`Start: battery ${restV} V at rest, ${crankV??'?'} V lowest while cranking`);
+  try{const h=JSON.parse(recall('golf-batt')||'[]');h.push(pendingStart);store('golf-batt',JSON.stringify(h.slice(-60)));}catch(e){}
+  vbuf=[];
+}
+let replies=0,hzT=performance.now(),reqMs=0,pollGen=0,offSince=null,waitStart=false;
 // One question at a time, RPM every other question, and the screen updates after every answer.
 // Order: rpm, speed, rpm, boost, rpm, load, rpm, air flow, rpm, <one slow sensor or battery>
 async function poll(){
@@ -691,14 +706,23 @@ async function poll(){
   let slowIdx=0,step=0;
   const others=FAST.filter(p=>p!=='0C'&&has(p));
   while(connected&&!demo&&gen===pollGen){
-    // Ignition off: the adapter stays powered, the ECU goes quiet. Check every 2 s whether the engine is back.
-    if(fresh.rpm==null||performance.now()-fresh.rpm>6000){
-      await readPid('0C');expireStale();tick();
-      if(fresh.rpm==null||performance.now()-fresh.rpm>6000){
-        offSince=offSince??performance.now();
-        // Engine off for a minute and a half: stop talking so the adapter can go to sleep and spare the battery.
-        if(performance.now()-offSince>90000){log('Engine off for 90 s: releasing the adapter so it can sleep');parkedSince=Date.now();offSince=null;dropLink();return;}
-        await new Promise(r=>setTimeout(r,2000));continue;}
+    // Engine not running. Ignition off: the ECU is silent. Ignition on: it answers 0 rpm.
+    // Either way, check the engine every second and fill the gaps with battery readings, so the
+    // dip when you turn the key (glow plugs, then the starter) is caught.
+    const silent=()=>fresh.rpm==null||performance.now()-fresh.rpm>6000, stopped=()=>silent()||(live.rpm??0)<300;
+    if(stopped()){
+      await readPid('0C');
+      if(!stopped()){if(waitStart)noteStart();waitStart=false;}
+      expireStale();tick();
+      if(stopped()){
+        waitStart=true;
+        if(silent()){offSince=offSince??performance.now();
+          // ECU silent for a minute and a half: stop talking so the adapter can go to sleep and spare the battery.
+          if(performance.now()-offSince>90000){log('Engine off for 90 s: releasing the adapter so it can sleep');parkedSince=Date.now();offSince=null;waitStart=false;vbuf=[];dropLink();return;}}
+        else offSince=null;
+        const until=performance.now()+1000;
+        while(performance.now()<until&&connected&&gen===pollGen){const v=await readVoltage();if(v!=null){vbuf.push({t:Date.now(),v});if(vbuf.length>1500)vbuf.splice(0,300);}}
+        tick();continue;}
     }
     offSince=null;
     const t0=performance.now();
@@ -763,8 +787,8 @@ let paused=null,pausedAt=null;
 function tripAuto(){
   const engineOn=live.rpm!=null&&live.rpm>300;
   if(engineOn&&!rec){
-    if(paused&&Date.now()-pausedAt<PAUSE_MAX){rec=paused;paused=null;rec.last=Date.now();rec.stops++;log('Trip resumed '+rec.id);renderTripState(true);}
-    else{if(paused)closeTrip(paused);paused=null;rec=newTrip(demo);log('Trip started '+rec.id);renderTripState(true);}
+    if(paused&&Date.now()-pausedAt<PAUSE_MAX){rec=paused;paused=null;rec.last=Date.now();rec.stops++;if(pendingStart){(rec.starts=rec.starts||[]).push(pendingStart);pendingStart=null;}log('Trip resumed '+rec.id);renderTripState(true);}
+    else{if(paused)closeTrip(paused);paused=null;rec=newTrip(demo);if(pendingStart&&Date.now()-pendingStart.at<60000){rec.starts=[pendingStart];}pendingStart=null;log('Trip started '+rec.id);renderTripState(true);}
   }else if(!engineOn&&rec){
     const t=rec;rec=null;paused=t;pausedAt=Date.now();flushChunk(t);log('Trip paused, engine off');renderTripState(true);
   }
@@ -791,7 +815,7 @@ function sampleTrip(now){
   if(rpm>300&&(sp??0)<2)rec.idleS+=dt;
   if(rpm>=2000&&(sp??0)>=60)rec.hotS+=dt;
   // Ignore the first minute after a start: the glow plugs pull the voltage down on purpose.
-  if(rpm>600){rec.runS=(rec.runS||0)+dt;if(rec.runS>60&&live.volt!=null)rec.minVolt=Math.min(rec.minVolt??99,live.volt);}else rec.runS=0;
+  if(rpm>600){rec.runS=(rec.runS||0)+dt;if(rec.runS>60&&rpm>=1200&&live.volt!=null)rec.minVolt=Math.min(rec.minVolt??99,live.volt);}else rec.runS=0;
   if(rpm>0&&rpm<1300&&(live.load??0)>85&&(sp??0)>5)rec.lugS=(rec.lugS||0)+dt;
   rec.maxRpm=Math.max(rec.maxRpm,rpm);rec.maxBoost=Math.max(rec.maxBoost,live.boost??0);rec.maxSpeed=Math.max(rec.maxSpeed,sp??0);rec.maxCoolant=Math.max(rec.maxCoolant,live.coolant??-99);
   if(rec.warm80==null&&(live.coolant??0)>=80)rec.warm80=Math.round(rec.engineS);
@@ -804,10 +828,10 @@ function sampleTrip(now){
 function flushChunk(t){t=t||rec;if(!t)return Promise.resolve();if(t.demo){t.buf=[];return Promise.resolve();}
   const rows=t.buf;t.buf=[];const save=()=>put('trips',{...summary(t),open:true});
   return rows.length?put('chunks',{trip:t.id,i:t.chunk++,rows}).then(save):save();}
-const KEEP=['minVolt','lugS','km','fuel','idleS','hotS','engineS','stops','maxRpm','maxBoost','maxSpeed','maxCoolant','warm80','coolStart','chunk','n','spark','start','id'];
+const KEEP=['starts','minVolt','lugS','km','fuel','idleS','hotS','engineS','stops','maxRpm','maxBoost','maxSpeed','maxCoolant','warm80','coolStart','chunk','n','spark','start','id'];
 function summary(t){return {id:t.id,start:t.start,end:t.last||Date.now(),durationS:Math.round(((t.last||Date.now())-t.start)/1000),engineS:Math.round(t.engineS||0),stops:t.stops||0,km:+t.km.toFixed(2),fuelL:+t.fuel.toFixed(3),avgL100:t.km>0.5?+(t.fuel/t.km*100).toFixed(2):null,
   samples:t.n,idleS:Math.round(t.idleS),hotS:Math.round(t.hotS),maxRpm:Math.round(t.maxRpm),maxBoost:+t.maxBoost.toFixed(2),maxSpeed:Math.round(t.maxSpeed),coolantStart:t.coolStart,maxCoolant:t.maxCoolant,warmTo80S:t.warm80,
-  outsideC:weather.t,minVolt:t.minVolt??null,lugS:Math.round(t.lugS||0),calib,fields:['t'].concat(FIELDS,EXTRA),supported:[...supported],spark:t.spark,demo:t.demo,state:Object.fromEntries(KEEP.map(k=>[k,t[k]]))};}
+  outsideC:weather.t,minVolt:t.minVolt??null,starts:t.starts||[],restV:t.starts?.[0]?.restV??null,crankV:t.starts?.[0]?.crankV??null,lugS:Math.round(t.lugS||0),calib,fields:['t'].concat(FIELDS,EXTRA),supported:[...supported],spark:t.spark,demo:t.demo,state:Object.fromEntries(KEEP.map(k=>[k,t[k]]))};}
 const demoTrips=[];
 async function closeTrip(t){
   if(!t)return;await flushChunk(t);const s=summary(t);s.open=false;
@@ -1007,8 +1031,16 @@ async function renderHome(){
   if(!recent.length)H.push(hline('','Turbo','No trips yet.'));
   else if(boost>=0.9)H.push(hline('ok','Turbo: healthy',`Peak ${boost.toFixed(2)} bar in recent trips. Normal for your engine is 1.0–1.2.`));
   else H.push(hline('','Turbo: not tested hard lately',`Peak ${boost.toFixed(2)} bar. It shows its full boost only under full throttle above 1800 rpm.`));
+  let bh=[];try{bh=JSON.parse(recall('golf-batt')||'[]');}catch(e){}
+  bh=bh.filter(x=>x.crankV!=null);
+  if(bh.length){const l=bh[bh.length-1],cv=l.crankV,rv=l.restV;
+    const prev=bh.slice(-8,-1),avgPrev=prev.length>=3?prev.reduce((a,x)=>a+x.crankV,0)/prev.length:null;
+    const trend=avgPrev!=null?(cv-avgPrev<=-0.3?` Falling: ${avgPrev.toFixed(1)} V on average before.`:` Steady over the last ${prev.length+1} starts.`):'';
+    const when=new Date(l.at).toLocaleDateString('ro-RO',{day:'numeric',month:'short'});
+    const st=cv<9.6||rv<12.0?'bad':cv<10.0||rv<12.3||trend.startsWith(' Falling')?'warn':'ok';
+    H.push(hline(st,st==='ok'?'Battery at start: strong':st==='warn'?'Battery at start: watch it':'Battery at start: weak',`Last start (${when}): ${rv.toFixed(1)} V at rest, ${cv.toFixed(1)} V lowest while cranking.${trend} Healthy: above 12.4 at rest and 10.0 cranking.`));}
   const volts=recent.map(x=>x.minVolt).filter(v=>v!=null);
-  if(volts.length){const mv=Math.min(...volts);H.push(mv>=13.2?hline('ok','Battery and alternator: fine',`Lowest while running: ${mv.toFixed(1)} V.`):hline('warn','Battery or alternator: check',`Dropped to ${mv.toFixed(1)} V while running. It should stay above 13.2 V.`));}
+  if(volts.length){const mv=Math.min(...volts);H.push(mv>=13.2?hline('ok','Alternator: charging fine',`Lowest while driving: ${mv.toFixed(1)} V.`):hline('warn','Alternator: check',`Dropped to ${mv.toFixed(1)} V while driving above 1200 rpm. It should stay above 13.2 V.`));}
   const longT=trips.filter(x=>(x.engineS||0)>=600&&x.maxCoolant>0).slice(0,5);
   if(longT.length){const mc=Math.max(...longT.map(x=>x.maxCoolant));
     H.push(mc>=89?hline('ok','Thermostat: fine',`Reaches ${mc}°C on longer trips.`):mc>=84?hline('warn','Thermostat: under watch',`Tops out at ${mc}°C on trips over 10 minutes. Normal is about 90°C. A 20-minute motorway run will settle it.`):hline('bad','Thermostat: probably opening early',`Only ${mc}°C on longer trips. Worth replacing at the next service.`));}
