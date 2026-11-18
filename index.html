@@ -59,6 +59,7 @@ h2{font-family:var(--display);font-weight:600;font-size:14px;text-transform:uppe
 .tile .tag{font-family:var(--display);font-weight:700;font-size:16px;letter-spacing:.08em;text-transform:uppercase;padding:2px 10px;border-radius:8px;background:var(--panel2);color:var(--muted);white-space:nowrap}
 .tile .num{font-family:var(--display);font-weight:700;font-size:min(40cqw,48cqh);line-height:.88;font-variant-numeric:tabular-nums;letter-spacing:-.02em;color:var(--fg);white-space:nowrap;display:flex;flex-direction:column;align-items:flex-start}
 .tile .num small{display:block;font-size:max(13px,.22em);font-weight:600;color:var(--muted);letter-spacing:.04em;margin-top:.25em;line-height:1}
+.tile .shift{position:absolute;right:6%;bottom:calc(14px + 15cqh);font-size:min(26cqw,26cqh);line-height:1;font-weight:700;color:var(--fg);pointer-events:none}
 .tile .bar{position:relative;height:18px;border-radius:9px;background:var(--panel2);overflow:hidden}
 .tile .bar i{position:absolute;inset:0 auto 0 0;width:0;background:var(--fg);transition:width .15s linear}
 .tile .bar{overflow:visible}.tile .bar i{border-radius:9px}
@@ -161,12 +162,12 @@ input[type=number]{background:var(--panel2);border:1px solid var(--line);color:v
   <span class="mdot" id="miniDot"></span>
   <span class="mt" id="miniTrip">No trip</span>
   <span class="mv"><b id="miniCool">–</b><small>°C</small></span>
-  <span class="mv"><b id="miniRpm">–</b><small>rpm</small></span>
+  <span class="mv"><b id="miniShift"></b><b id="miniRpm">–</b><small>rpm</small></span>
   <span class="mv"><b id="miniBoost">–</b><small>bar</small></span>
 </div>
 <div class="app">
   <div class="top">
-    <div class="brand">Golfozaur 3000<small>1.9 TDI BLS · v26</small></div>
+    <div class="brand">Golfozaur 3000<small>1.9 TDI BLS · v27</small></div>
     <div class="chips">
       <span class="chip" id="chipBt">Adapter off</span>
       <span class="chip" id="chipGps">GPS off</span>
@@ -243,6 +244,7 @@ input[type=number]{background:var(--panel2);border:1px solid var(--line);color:v
         <div class="tile" id="tRpm">
           <div class="hd"><span class="lab">RPM</span><span class="tag" id="rpmTag">–</span></div>
           <div class="num" id="rpmNum">–<small>rpm</small></div>
+          <div class="shift" id="rpmShift" hidden></div>
           <div class="bar"><i id="rpmFill"></i><b id="rpmLim" hidden></b></div>
         </div>
         <div class="tile" id="tSpeed">
@@ -785,7 +787,7 @@ function derive(now){
 }
 
 // =============== trips ===============
-const FIELDS=['rpm','speed','coolant','map','boost','load','maf','iat','throttle','volt','lambda','rail','egrcmd','ambient','oil','fuellvl','lph','l100','hp','accg'];
+const FIELDS=['gear','shift','rpm','speed','coolant','map','boost','load','maf','iat','throttle','volt','lambda','rail','egrcmd','ambient','oil','fuellvl','lph','l100','hp','accg'];
 const EXTRA=['lat','lon','alt','gpsSpeed','heading','ax','ay','az'];
 const CHUNK=60;
 function tripId(){const d=new Date();const p=n=>String(n).padStart(2,'0');return `${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;}
@@ -942,6 +944,29 @@ window.addEventListener('devicemotion',e=>{const a=e.acceleration||e.acceleratio
 
 // =============== main loop: derive, record, draw ===============
 function tick(){const now=performance.now();derive(now);tripAuto();sampleTrip(Date.now());turboHeat(now);updateCockpit(now);}
+// Gear advice. Your gearbox (0A4, 195/65 R15): km/h per 1000 rpm in each gear, measured from your own trips.
+const GEARS=[9.0,16.5,25.3,35.3,45.9];
+let shiftCand=0,shiftSince=0,shiftShown=0,shiftShownAt=0;
+function gearNow(v,r){if(v==null||r==null||v<6||r<600)return null;const k=v/r*1000;let best=null,err=1;GEARS.forEach((g,i)=>{const e=Math.abs(k/g-1);if(e<err){err=e;best=i+1;}});return err<0.07?best:null;}
+function shiftAdvice(now,v,r,ld,lim){
+  const g=gearNow(v,r);let want=0;
+  if(g&&ld>=10){   // coasting (no throttle) gets no advice
+    const L=lim??REDLINE;
+    const up=g<5?r*GEARS[g-1]/GEARS[g]:null, down=g>1?r*GEARS[g-1]/GEARS[g-2]:null;
+    // Shift up: earlier when cruising, later when pulling hard, never past the limit for this coolant temperature.
+    const upAt=Math.min(L-150,ld>75?3000:ld>50?2400:2000);
+    const minAfter=ld>60?1600:1300;
+    if(up!=null&&r>=upAt&&up>=minAfter)want=1;
+    // Shift down: labouring (deep pedal under 1300 rpm) or under 1100 rpm, if the lower gear stays under the limit.
+    else if(down!=null&&down<=L-100&&((r<1300&&ld>85)||r<1100))want=-1;
+  }
+  live.gear=g;
+  if(want!==shiftCand){shiftCand=want;shiftSince=now;}
+  // Show only after it's held for a second; keep it up at least 1.5 s so it doesn't flicker.
+  if(want!==shiftShown&&now-shiftSince>1000&&(now-shiftShownAt>1500||want!==0)){shiftShown=want;shiftShownAt=now;}
+  else if(want===0&&shiftShown!==0&&now-shiftShownAt>1500&&now-shiftSince>600){shiftShown=0;shiftShownAt=now;}
+  live.shift=shiftShown;return shiftShown;
+}
 function rpmLimit(c){if(c==null)return null;if(c<40)return 2000;if(c<60)return 2500;if(c<75)return 3000;if(c<85)return 3500;return REDLINE;}
 function boostLimit(c){if(c==null)return null;if(c<50)return 0.4;if(c<70)return 0.7;return null;}
 const pct=(v,max)=>Math.max(0,Math.min(100,v/max*100));
@@ -973,6 +998,9 @@ function updateCockpit(now){
   }
   setTile('tRpm',rs);put$('rpmNum','html',(r!=null?String(Math.round(r)):'–')+'<small>rpm</small>');
   put$('rpmTag','text',lim!=null?'max '+lim:'–');
+  {const gpsOk=gps.speed!=null&&gps.at&&now-gps.at<4000;const sh=shiftAdvice(now,gpsOk?gps.speed:(sp!=null?sp*0.99:null),r,ld,lim);
+   put$('rpmShift','hidden',!sh);if(sh)put$('rpmShift','text',sh>0?'▲':'▼');
+   put$('miniShift','text',sh>0?'▲':sh<0?'▼':'');}
   put$('rpmFill','width',r!=null?pct(r,RPM_MAX)+'%':'0');put$('rpmLim','hidden',lim==null);if(lim!=null)put$('rpmLim','left',pct(lim,RPM_MAX)+'%');
   // Speed: GPS when fresh, else the car
   const gpsOk=gps.speed!=null&&gps.at&&now-gps.at<4000;
