@@ -25,10 +25,13 @@
 html,body{margin:0;height:100%}
 body{background:var(--bg);color:var(--fg);font-family:var(--body);font-size:15px;line-height:1.45;-webkit-tap-highlight-color:transparent}
 .app{min-height:100%;display:flex;flex-direction:column;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
-.top{display:flex;align-items:center;justify-content:space-between;gap:10px;padding-block:10px;padding-left:max(14px,env(safe-area-inset-left,0px));padding-right:max(14px,env(safe-area-inset-right,0px));border-bottom:1px solid var(--line);flex-wrap:wrap}
+.top{display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-areas:'brand nav' 'chips chips';align-items:center;gap:8px 10px;padding-block:10px;padding-left:max(14px,env(safe-area-inset-left,0px));padding-right:max(14px,env(safe-area-inset-right,0px));border-bottom:1px solid var(--line)}
+.top .brand{grid-area:brand;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.top nav{grid-area:nav}.top .chips{grid-area:chips}
+@media (min-width:760px){.top{grid-template-columns:auto minmax(0,1fr) auto;grid-template-areas:'brand chips nav'}}
 .brand{font-family:var(--display);font-weight:700;font-size:22px;letter-spacing:.02em}
 .brand small{font-family:var(--mono);font-weight:400;font-size:11px;color:var(--muted);margin-left:8px;letter-spacing:0}
-.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chips{display:flex;gap:6px;flex-wrap:nowrap;overflow:hidden;min-width:0}
+.chips .chip{max-width:16em;overflow:hidden;text-overflow:ellipsis;flex:0 0 auto}
 .chip{font-family:var(--mono);font-size:11px;padding:3px 8px;border-radius:999px;border:1px solid var(--line);color:var(--muted);white-space:nowrap}
 .chip.ok{color:var(--ok);border-color:currentColor}.chip.warn{color:var(--warn);border-color:currentColor}.chip.bad{color:var(--bad);border-color:currentColor}.chip.rec{color:#fff;background:var(--bad);border-color:var(--bad)}
 nav{display:flex;gap:4px}
@@ -50,12 +53,12 @@ h2{font-family:var(--display);font-weight:600;font-size:14px;text-transform:uppe
 
 /* ---- Drive cockpit: four big numbers, colour = what to do ---- */
 .cockpit{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-.tile{position:relative;border-radius:18px;padding:12px 14px 14px;background:var(--panel);border:1px solid var(--line);display:flex;flex-direction:column;justify-content:space-between;min-width:0;min-height:clamp(150px,24vh,240px);transition:background .25s,border-color .25s;overflow:hidden}
+.tile{container-type:size;position:relative;border-radius:18px;padding:12px 14px 14px;background:var(--panel);border:1px solid var(--line);display:flex;flex-direction:column;justify-content:space-between;min-width:0;min-height:clamp(150px,24vh,240px);transition:background .25s,border-color .25s;overflow:hidden}
 .tile .hd{display:flex;justify-content:space-between;align-items:center;gap:6px}
 .tile .lab{font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.12em;color:var(--muted)}
 .tile .tag{font-family:var(--display);font-weight:700;font-size:16px;letter-spacing:.08em;text-transform:uppercase;padding:2px 10px;border-radius:8px;background:var(--panel2);color:var(--muted);white-space:nowrap}
-.tile .num{font-family:var(--display);font-weight:700;font-size:clamp(64px,17vw,150px);line-height:.88;font-variant-numeric:tabular-nums;letter-spacing:-.02em;color:var(--fg);white-space:nowrap}
-.tile .num small{font-size:.3em;font-weight:600;color:var(--muted);margin-left:4px;letter-spacing:0}
+.tile .num{font-family:var(--display);font-weight:700;font-size:min(40cqw,48cqh);line-height:.88;font-variant-numeric:tabular-nums;letter-spacing:-.02em;color:var(--fg);white-space:nowrap;display:flex;flex-direction:column;align-items:flex-start}
+.tile .num small{display:block;font-size:max(13px,.22em);font-weight:600;color:var(--muted);letter-spacing:.04em;margin-top:.25em;line-height:1}
 .tile .bar{position:relative;height:10px;border-radius:5px;background:var(--panel2);overflow:hidden}
 .tile .bar i{position:absolute;inset:0 auto 0 0;width:0;background:var(--fg);transition:width .15s linear}
 .tile .bar b{position:absolute;top:0;bottom:0;width:4px;margin-left:-2px;background:var(--fg)}
@@ -91,8 +94,20 @@ body.drive-full .cockpit{height:calc(100dvh - 16px - env(safe-area-inset-top,0px
 body.drive-full .tile{min-height:0}
 @media (orientation:landscape){
   body.drive-full .cockpit{grid-template-columns:repeat(4,minmax(0,1fr));grid-template-rows:1fr auto}
-  body.drive-full .tile .num{font-size:min(10vw,30vh)}
   body.drive-full .strip .v{font-size:min(4.2vw,8vh)}
+}
+
+/* ---- Mini view: split screen next to navigation ---- */
+#mini{display:none}
+@media (max-height:360px) and (max-width:620px),(max-width:340px){
+  .app{display:none}
+  #mini{display:flex;flex-wrap:wrap;align-items:center;align-content:center;gap:6px 14px;min-height:100dvh;padding:8px max(10px,env(safe-area-inset-left,0px));background:var(--bg)}
+  #mini .mdot{width:12px;height:12px;border-radius:50%;background:var(--dim)}
+  #mini .mdot.rec{background:var(--bad)}#mini .mdot.ok{background:var(--ok)}
+  #mini .mt{font-family:var(--mono);font-size:13px;color:var(--muted)}
+  #mini .mv b{font-family:var(--display);font-weight:700;font-size:30px;font-variant-numeric:tabular-nums}
+  #mini .mv small{font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:3px}
+  #mini .mv.hot b{color:var(--bad)}#mini .mv.cold b{color:var(--cool)}
 }
 
 /* ---- Home ---- */
@@ -144,9 +159,16 @@ input[type=number]{background:var(--panel2);border:1px solid var(--line);color:v
 </style>
 </head>
 <body>
+<div id="mini" aria-live="off">
+  <span class="mdot" id="miniDot"></span>
+  <span class="mt" id="miniTrip">No trip</span>
+  <span class="mv"><b id="miniCool">–</b><small>°C</small></span>
+  <span class="mv"><b id="miniRpm">–</b><small>rpm</small></span>
+  <span class="mv"><b id="miniBoost">–</b><small>bar</small></span>
+</div>
 <div class="app">
   <div class="top">
-    <div class="brand">Golfozaur 3000<small>1.9 TDI BLS · v21</small></div>
+    <div class="brand">Golfozaur 3000<small>1.9 TDI BLS · v22</small></div>
     <div class="chips">
       <span class="chip" id="chipBt">Adapter off</span>
       <span class="chip" id="chipGps">GPS off</span>
@@ -219,8 +241,9 @@ input[type=number]{background:var(--panel2);border:1px solid var(--line);color:v
         <summary>How it works</summary>
         <p><b>Trips run themselves.</b> Once the adapter is connected, a trip starts when the engine starts. Switch off for a fuel stop and the trip pauses. Start again within 15 minutes and it carries on. After 15 minutes off, it closes. Walk away from the car and the app simply loses the adapter. Keep the app open on screen while driving: Android stops web pages in the background.</p>
         <p><b>RPM.</b> The tag shows the most you should rev right now, which rises as the engine warms: 2000 below 40°C, 2500 below 60°C, 3000 below 75°C, 3500 below 85°C, then 4500. Blue: cold but fine. Green: warm and in the efficient zone, 1500–2600. Amber: close to the limit, or labouring at low revs under load. Solid red: over the limit.</p>
-        <p><b>Coolant.</b> Exact temperature. COLD below 60°C, WARMING to 80°C, READY from 80°C, HOT above 105°C. After two steady minutes between 80 and 100°C the tile switches to consumption, with the temperature and a tick in the corner. It switches back the moment the temperature leaves that band.</p>
+        <p><b>Coolant.</b> Exact temperature. COLD below 60°C, WARMING to 80°C, READY from 80°C, HOT above 105°C.</p>
         <p><b>Turbo.</b> OFF: cruising, idling or coasting. ON: working. FULL: near maximum, about 1.0–1.2 bar on your engine. When cold, the tag shows the boost to stay under, and the tile goes red past it. LOW: full throttle above 2000 rpm but under 0.6 bar for a few seconds, which can mean a boost leak or limp mode.</p>
+        <p><b>Next to navigation.</b> Put the app in split screen with Maps or Waze and make it as small as you like. It switches to a one-line strip (recording dot, trip time, coolant, RPM, boost) and keeps logging, because Android still counts it as open.</p>
         <p><b>Let it idle.</b> Appears when you stop after a stretch of real boost while moving, for 30–90 seconds depending on how hard the turbo worked. Revving in neutral doesn’t count.</p>
       </details>
     </section>
@@ -231,7 +254,7 @@ input[type=number]{background:var(--panel2);border:1px solid var(--line);color:v
       <div class="cockpit" id="cockpit">
         <div class="tile" id="tRpm">
           <div class="hd"><span class="lab">RPM</span><span class="tag" id="rpmTag">–</span></div>
-          <div class="num" id="rpmNum">–</div>
+          <div class="num" id="rpmNum">–<small>rpm</small></div>
           <div class="bar"><i id="rpmFill"></i><b id="rpmLim" hidden></b></div>
         </div>
         <div class="tile" id="tSpeed">
@@ -766,6 +789,7 @@ let tripStateT=0;
 function renderTripState(force){
   const nowMs=Date.now();if(!force&&nowMs-tripStateT<1000)return;tripStateT=nowMs;
   const c=$('tripState'),i=$('tripInfo');
+  $('miniDot').className='mdot'+(rec?' rec':connected?' ok':'');$('miniTrip').textContent=rec?'REC '+fmt((Date.now()-rec.start)/1000)+' · '+rec.km.toFixed(1)+' km':paused?'Paused':connected?'Connected':'Not connected';
   if(rec){c.className='chip rec';c.textContent='Trip '+fmt((Date.now()-rec.start)/1000);i.textContent=rec.km.toFixed(1)+' km'+(rec.demo?' · demo':'');$('btnRec').disabled=false;$('chipRec').hidden=false;$('chipRec').textContent=c.textContent;}
   else if(paused){const left=Math.max(0,PAUSE_MAX-(Date.now()-pausedAt));c.className='chip warn';c.textContent='Paused';i.textContent='continues if you start within '+Math.ceil(left/60000)+' min';$('btnRec').disabled=false;$('chipRec').hidden=true;}
   else{c.className='chip';c.textContent='No trip';i.textContent=connected?'starts with the engine':'';$('btnRec').disabled=true;$('chipRec').hidden=true;}
@@ -927,7 +951,7 @@ function updateCockpit(now){
     if(r>L)rs='hot';else if(r>L*0.88)rs='warn';else if(r<1300&&ld>70&&(sp??0)>5)rs='warn';
     else if(!warm&&c!=null)rs='cold';else if(warm&&r>=1500&&r<=2600)rs='ok';
   }
-  setTile('tRpm',rs);put$('rpmNum','text',r!=null?String(Math.round(r)):'–');
+  setTile('tRpm',rs);put$('rpmNum','html',(r!=null?String(Math.round(r)):'–')+'<small>rpm</small>');
   put$('rpmTag','text',lim!=null?'max '+lim:'–');
   put$('rpmFill','width',r!=null?pct(r,RPM_MAX)+'%':'0');put$('rpmLim','hidden',lim==null);if(lim!=null)put$('rpmLim','left',pct(lim,RPM_MAX)+'%');
   // Speed: GPS when fresh, else the car
@@ -938,7 +962,7 @@ function updateCockpit(now){
   // the tile turns into consumption, with a small coolant check in the corner, until the temperature leaves the band.
   const inBand=c!=null&&c>=80&&c<=100;
   steadySince=inBand?(steadySince??now):null;
-  const quiet=inBand&&now-steadySince>120000;
+  const quiet=false; // kept on screen while we watch the thermostat (was: inBand && steady for 2 min)
   const cons=live.l100!=null?{v:Math.min(live.l100,99).toFixed(1),u:'L/100'}:live.lph!=null?{v:live.lph.toFixed(1),u:'L/h'}:{v:'–',u:'L/100'};
   if(quiet){
     setTile('tCool','');put$('cLab','text','Consumption');put$('cTag','text',Math.round(c)+'°C ✓');put$('cTag','color','var(--ok)');
@@ -969,6 +993,8 @@ function updateCockpit(now){
   const t=rec||paused;
   put$('mAvg','text',t&&t.km>0.3?(t.fuel/t.km*100).toFixed(1):'–');put$('mKm','text',t?t.km.toFixed(1):'–');
   put$('hRpm','text',r!=null?String(Math.round(r)):'–');put$('hCool','text',c!=null?Math.round(c)+'°':'–');put$('hSpd','text',v!=null?String(Math.round(v)):'–');put$('hVolt','text',live.volt!=null?live.volt.toFixed(1):'–');
+  put$('miniRpm','text',r!=null?String(Math.round(r)):'–');put$('miniCool','text',c!=null?String(Math.round(c)):'–');put$('miniBoost','text',b!=null?Math.max(0,b).toFixed(2):'–');
+  $('miniCool').parentElement.className='mv'+(c!=null&&c<60?' cold':c!=null&&c>105?' hot':'');$('miniRpm').parentElement.className='mv'+(rs==='hot'?' hot':'');
   put$('mVolt','text',live.volt!=null?live.volt.toFixed(1):'–');put$('mVolt','class','v'+(live.volt!=null&&((r??0)>500?live.volt<13.2:live.volt<12.2)?' warn':''));
   put$('mIat','text',t?fmt(t.engineS||0):'–');
 }
@@ -1075,11 +1101,10 @@ let driving=false;
 async function enterDrive(){driving=true;document.body.classList.add('drive-full');
   document.querySelectorAll('.view').forEach(v=>v.hidden=v.id!=='view-drive');keepAwake();
   try{await document.documentElement.requestFullscreen();}catch(e){}
-  try{await screen.orientation?.lock?.('landscape');}catch(e){}}
+}
 async function exitDrive(){if(!driving)return;driving=false;document.body.classList.remove('drive-full');
   const cur=document.querySelector('nav button[aria-current="true"]')?.dataset.view||'home';
   document.querySelectorAll('.view').forEach(v=>v.hidden=v.id!=='view-'+cur);
-  try{screen.orientation?.unlock?.();}catch(e){}
   try{if(document.fullscreenElement)await document.exitFullscreen();}catch(e){}renderHome();}
 $('btnDrive').onclick=enterDrive;$('btnExitDrive').onclick=exitDrive;
 document.addEventListener('fullscreenchange',()=>{if(!document.fullscreenElement)exitDrive();});
