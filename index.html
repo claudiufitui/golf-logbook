@@ -85,7 +85,7 @@ details.legend p{margin:.6em 0;font-size:14px;color:var(--muted);max-width:65ch}
 details.legend b{color:var(--fg)}
 @media (max-width:420px){.strip{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media (orientation:landscape) and (max-height:600px){.tile{min-height:calc((100dvh - 150px)/2)}.tile .num{font-size:min(19vh,130px)}}
-body.drive-full .top,body.drive-full .controls,body.drive-full .tripbar,body.drive-full .legend,body.drive-full #driveNote,body.drive-full #btNotice{display:none!important}
+body.drive-full .top{display:none!important}
 body.drive-full main{padding-block:8px;padding-left:max(10px,env(safe-area-inset-left,0px),env(safe-area-inset-right,0px));padding-right:max(10px,env(safe-area-inset-left,0px),env(safe-area-inset-right,0px));height:100dvh}
 body.drive-full .cockpit{height:calc(100dvh - 16px - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px));grid-template-rows:1fr 1fr auto}
 body.drive-full .tile{min-height:0}
@@ -94,6 +94,34 @@ body.drive-full .tile{min-height:0}
   body.drive-full .tile .num{font-size:min(10vw,30vh)}
   body.drive-full .strip .v{font-size:min(4.2vw,8vh)}
 }
+
+/* ---- Home ---- */
+.hero{display:flex;flex-direction:column;gap:12px}
+.hero-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+.hero-title{font-family:var(--display);font-weight:700;font-size:28px;line-height:1.1}
+.livebar{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;background:var(--panel2);border-radius:10px;padding:10px 12px}
+.livebar div,.stats div{display:flex;flex-direction:column;min-width:0}
+.livebar .k,.stats .k{font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted)}
+.livebar .v,.stats .v{font-family:var(--display);font-weight:600;font-size:24px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.stats .u{font-family:var(--mono);font-size:10.5px;color:var(--dim)}
+.btn.drive{background:var(--accent);border-color:var(--accent);color:var(--accent-fg);font-size:17px;flex:1 1 180px;min-height:54px}
+.hero-actions{gap:8px}
+.health{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px}
+.health li{display:grid;grid-template-columns:12px minmax(0,1fr);gap:4px 10px;align-items:baseline}
+.health .dot{width:10px;height:10px;border-radius:50%;background:var(--dim);transform:translateY(1px)}
+.health .dot.ok{background:var(--ok)}.health .dot.warn{background:var(--warn)}.health .dot.bad{background:var(--bad)}
+.health b{font-weight:600}.health .d{grid-column:2;font-size:13px;color:var(--muted)}
+.fillform{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin-top:12px}
+.fillform input[type=number]{width:8em}
+label.check{display:flex;gap:8px;align-items:center;font-size:14px;color:var(--fg);min-height:44px}
+label.check input{width:20px;height:20px;accent-color:var(--accent)}
+.fill{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 10px;padding:10px 0;border-top:1px solid var(--line)}
+.fill .meta{font-family:var(--mono);font-size:12px;color:var(--muted)}
+.fill .res{text-align:right;font-family:var(--display);font-weight:600;font-size:20px}
+.fill button{grid-column:2;justify-self:end;padding:4px 10px;min-height:32px;font-size:12px}
+.exitdrive{position:fixed;top:calc(6px + env(safe-area-inset-top,0px));right:calc(6px + env(safe-area-inset-right,0px));z-index:5;width:36px;height:36px;border-radius:50%;border:1px solid var(--line);background:color-mix(in srgb,var(--panel) 80%,transparent);color:var(--muted);font-size:15px;opacity:.55;cursor:pointer}
+@media (max-width:440px){.stats,.livebar{grid-template-columns:repeat(2,minmax(0,1fr))}}
 
 /* ---- Trips ---- */
 .trip{border-top:1px solid var(--line);padding:12px 0;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 10px}
@@ -118,7 +146,7 @@ input[type=number]{background:var(--panel2);border:1px solid var(--line);color:v
 <body>
 <div class="app">
   <div class="top">
-    <div class="brand">Golfozaur 3000<small>1.9 TDI BLS · v19</small></div>
+    <div class="brand">Golfozaur 3000<small>1.9 TDI BLS · v20</small></div>
     <div class="chips">
       <span class="chip" id="chipBt">Adapter off</span>
       <span class="chip" id="chipGps">GPS off</span>
@@ -126,16 +154,80 @@ input[type=number]{background:var(--panel2);border:1px solid var(--line);color:v
       <span class="chip rec" id="chipRec" hidden>REC</span>
     </div>
     <nav>
-      <button data-view="drive" aria-current="true">Drive</button>
+      <button data-view="home" aria-current="true">Home</button>
       <button data-view="trips">Trips</button>
       <button data-view="car">Car</button>
     </nav>
   </div>
 
   <main>
-    <!-- DRIVE -->
-    <section class="view" id="view-drive">
+    <!-- HOME -->
+    <section class="view" id="view-home">
       <div class="notice bad" id="btNotice" hidden></div>
+      <div class="panel hero">
+        <div class="hero-top">
+          <div><div class="hero-title" id="hTitle">Car parked</div><div class="muted small" id="hSub">Connect the adapter with the ignition on.</div></div>
+          <span class="chip" id="tripState">No trip</span>
+        </div>
+        <div class="livebar" id="hLive" hidden>
+          <div><span class="k">RPM</span><span class="v" id="hRpm">–</span></div>
+          <div><span class="k">Coolant</span><span class="v" id="hCool">–</span></div>
+          <div><span class="k">Speed</span><span class="v" id="hSpd">–</span></div>
+          <div><span class="k">Battery</span><span class="v" id="hVolt">–</span></div>
+        </div>
+        <div class="row hero-actions">
+          <button class="btn drive" id="btnDrive">Drive mode</button>
+          <button class="btn" id="btnConnect">Connect adapter</button>
+        </div>
+        <span class="muted small" id="tripInfo"></span>
+      </div>
+
+      <div class="panel">
+        <h2>Car health</h2>
+        <ul class="health" id="health"><li class="muted small">Drive a few trips and this fills in.</li></ul>
+      </div>
+
+      <div class="panel">
+        <h2>This week</h2>
+        <div class="stats" id="week"></div>
+      </div>
+
+      <div class="panel">
+        <h2>Last trip</h2>
+        <div id="lastTrip"><p class="muted small">No trips yet.</p></div>
+      </div>
+
+      <div class="panel">
+        <div class="row" style="justify-content:space-between"><h2 style="margin:0">Fuel</h2><button class="btn" id="btnFillOpen">Add fill-up</button></div>
+        <form id="fillForm" hidden class="fillform">
+          <label class="field" for="fLit">Litres<input type="number" id="fLit" step="0.01" min="1" max="80" inputmode="decimal" required></label>
+          <label class="field" for="fLei">Paid (lei)<input type="number" id="fLei" step="0.01" min="1" inputmode="decimal" required></label>
+          <label class="field" for="fOdo">Odometer (km)<input type="number" id="fOdo" step="1" min="0" inputmode="numeric" placeholder="optional"></label>
+          <label class="check" for="fFull"><input type="checkbox" id="fFull" checked> Filled to the top</label>
+          <div class="row"><button class="btn primary" type="submit">Save</button><button class="btn" type="button" id="btnFillCancel">Cancel</button></div>
+        </form>
+        <div id="fuelStats" class="stats" style="margin-top:12px"></div>
+        <div id="fills"></div>
+      </div>
+
+      <div class="controls">
+        <button class="btn" id="btnRec" disabled>End trip now</button>
+        <button class="btn" id="btnDemo">Demo</button>
+      </div>
+      <p class="muted small" id="driveNote"></p>
+      <details class="legend">
+        <summary>How it works</summary>
+        <p><b>Trips run themselves.</b> Once the adapter is connected, a trip starts when the engine starts. Switch off for a fuel stop and the trip pauses. Start again within 15 minutes and it carries on. After 15 minutes off, it closes. Walk away from the car and the app simply loses the adapter. Keep the app open on screen while driving: Android stops web pages in the background.</p>
+        <p><b>RPM.</b> The tag shows the most you should rev right now, which rises as the engine warms: 2000 below 40°C, 2500 below 60°C, 3000 below 75°C, 3500 below 85°C, then 4500. Blue: cold but fine. Green: warm and in the efficient zone, 1500–2600. Amber: close to the limit, or labouring at low revs under load. Solid red: over the limit.</p>
+        <p><b>Coolant.</b> Exact temperature. COLD below 60°C, WARMING to 80°C, READY from 80°C, HOT above 105°C. After two steady minutes between 80 and 100°C the tile switches to consumption, with the temperature and a tick in the corner. It switches back the moment the temperature leaves that band.</p>
+        <p><b>Turbo.</b> OFF: cruising, idling or coasting. ON: working. FULL: near maximum, about 1.0–1.2 bar on your engine. When cold, the tag shows the boost to stay under, and the tile goes red past it. LOW: full throttle above 2000 rpm but under 0.6 bar for a few seconds, which can mean a boost leak or limp mode.</p>
+        <p><b>Let it idle.</b> Appears when you stop after a stretch of real boost while moving, for 30–90 seconds depending on how hard the turbo worked. Revving in neutral doesn’t count.</p>
+      </details>
+    </section>
+
+    <!-- DRIVE MODE -->
+    <section class="view" id="view-drive" hidden>
+      <button class="exitdrive" id="btnExitDrive" aria-label="Leave drive mode">✕</button>
       <div class="cockpit" id="cockpit">
         <div class="tile" id="tRpm">
           <div class="hd"><span class="lab">RPM</span><span class="tag" id="rpmTag">–</span></div>
@@ -169,22 +261,6 @@ input[type=number]{background:var(--panel2);border:1px solid var(--line);color:v
           <div><span class="k">Trip time</span><span class="v" id="mIat">–</span></div>
         </div>
       </div>
-      <div class="tripbar"><span class="chip" id="tripState">No trip</span><span class="muted small" id="tripInfo"></span></div>
-      <div class="controls">
-        <button class="btn primary" id="btnConnect">Connect adapter</button>
-        <button class="btn" id="btnRec" disabled>End trip now</button>
-        <button class="btn" id="btnFull">Full screen</button>
-        <button class="btn" id="btnDemo">Demo</button>
-      </div>
-      <p class="muted small" id="driveNote"></p>
-      <details class="legend">
-        <summary>How it works</summary>
-        <p><b>Trips run themselves.</b> Once the adapter is connected, a trip starts when the engine starts. Switch off for a fuel stop and the trip pauses. Start again within 15 minutes and it carries on. After 15 minutes off, it closes. Walk away from the car and the app simply loses the adapter. Keep the app open on screen while driving: Android stops web pages in the background.</p>
-        <p><b>RPM.</b> The tag shows the most you should rev right now, which rises as the engine warms: 2000 below 40°C, 2500 below 60°C, 3000 below 75°C, 3500 below 85°C, then 4500. Blue: cold but fine. Green: warm and in the efficient zone, 1500–2600. Amber: close to the limit, or labouring at low revs under load. Solid red: over the limit.</p>
-        <p><b>Coolant.</b> Exact temperature. COLD below 60°C, WARMING to 80°C, READY from 80°C, HOT above 105°C. After two steady minutes between 80 and 100°C the tile switches to consumption, with the temperature and a tick in the corner. It switches back the moment the temperature leaves that band.</p>
-        <p><b>Turbo.</b> OFF: cruising, idling or coasting. ON: working. FULL: near maximum, about 1.0–1.2 bar on your engine. When cold, the tag shows the boost to stay under, and the tile goes red past it. LOW: full throttle above 2000 rpm but under 0.6 bar for a few seconds, which can mean a boost leak or limp mode.</p>
-        <p><b>Let it idle.</b> Appears when you stop after a stretch of real boost while moving, for 30–90 seconds depending on how hard the turbo worked. Revving in neutral doesn’t count.</p>
-      </details>
     </section>
 
     <!-- TRIPS -->
@@ -330,14 +406,17 @@ document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{
   document.querySelectorAll('nav button').forEach(x=>x.setAttribute('aria-current',x===b));
   document.querySelectorAll('.view').forEach(v=>v.hidden=v.id!=='view-'+b.dataset.view);
   if(b.dataset.view==='trips')renderTrips();
+  if(b.dataset.view==='home')renderHome();
 });
 
 // =============== storage (IndexedDB on this phone) ===============
 let idb=null;
-function openDb(){return new Promise(res=>{try{const r=indexedDB.open('golf-logbook',1);
-  r.onupgradeneeded=()=>{const d=r.result;d.createObjectStore('trips',{keyPath:'id'});d.createObjectStore('chunks',{keyPath:['trip','i']});};
+function openDb(){return new Promise(res=>{try{const r=indexedDB.open('golf-logbook',2);
+  r.onupgradeneeded=()=>{const d=r.result;const has=n=>d.objectStoreNames.contains(n);
+    if(!has('trips'))d.createObjectStore('trips',{keyPath:'id'});if(!has('chunks'))d.createObjectStore('chunks',{keyPath:['trip','i']});if(!has('fills'))d.createObjectStore('fills',{keyPath:'id'});};
   r.onsuccess=()=>{idb=r.result;res(idb);};r.onerror=()=>{log('Storage unavailable: '+r.error);res(null);};}catch(e){res(null);}});}
 function put(store,val){return new Promise(res=>{if(!idb)return res(false);try{const t=idb.transaction(store,'readwrite');t.objectStore(store).put(val);t.oncomplete=()=>res(true);t.onerror=()=>{log('Save failed: '+t.error);res(false);};}catch(e){res(false);}});}
+function delRec(store,key){return new Promise(res=>{if(!idb)return res();try{const t=idb.transaction(store,'readwrite');t.objectStore(store).delete(key);t.oncomplete=()=>res();t.onerror=()=>res();}catch(e){res();}});}
 function getAll(store,range){return new Promise(res=>{if(!idb)return res([]);try{const r=idb.transaction(store).objectStore(store).getAll(range);r.onsuccess=()=>res(r.result||[]);r.onerror=()=>res([]);}catch(e){res([]);}});}
 async function tripRows(id){const ch=await getAll('chunks',IDBKeyRange.bound([id,0],[id,1e9]));ch.sort((a,b)=>a.i-b.i);return ch.flatMap(c=>c.rows);}
 
@@ -580,6 +659,7 @@ async function readVehicle(){
 async function readMonitors(){
   const r=await cmd('0101',2000);const b=payload(r,'41','01');if(!b||b.length<4){$('monitors').textContent='Not reported.';return;}
   const [A,B,C,D]=b;const mil=!!(A&128),count=A&127,diesel=!!(B&8);
+  store('golf-dtc',JSON.stringify({at:Date.now(),mil,count}));
   const names=diesel?['NMHC catalyst','NOx aftertreatment',null,'Boost pressure',null,'Exhaust gas sensor','Particulate filter (DPF)','EGR / VVT']:['Catalyst','Heated catalyst','Evaporative system','Secondary air','A/C refrigerant','Oxygen sensor','O2 sensor heater','EGR'];
   const list=[['Misfire',B&1,B&16],['Fuel system',B&2,B&32],['Components',B&4,B&64]];
   names.forEach((n,i)=>{if(n)list.push([n,C&(1<<i),D&(1<<i)]);});
@@ -699,6 +779,8 @@ function sampleTrip(now){
   const rpm=live.rpm??0;
   if(rpm>300&&(sp??0)<2)rec.idleS+=dt;
   if(rpm>=2000&&(sp??0)>=60)rec.hotS+=dt;
+  if(rpm>600&&live.volt!=null)rec.minVolt=Math.min(rec.minVolt??99,live.volt);
+  if(rpm>0&&rpm<1300&&(live.load??0)>85&&(sp??0)>5)rec.lugS=(rec.lugS||0)+dt;
   rec.maxRpm=Math.max(rec.maxRpm,rpm);rec.maxBoost=Math.max(rec.maxBoost,live.boost??0);rec.maxSpeed=Math.max(rec.maxSpeed,sp??0);rec.maxCoolant=Math.max(rec.maxCoolant,live.coolant??-99);
   if(rec.warm80==null&&(live.coolant??0)>=80)rec.warm80=Math.round(rec.engineS);
   const r=v=>v==null||!isFinite(v)?null:Math.round(v*100)/100;
@@ -710,15 +792,15 @@ function sampleTrip(now){
 function flushChunk(t){t=t||rec;if(!t)return Promise.resolve();if(t.demo){t.buf=[];return Promise.resolve();}
   const rows=t.buf;t.buf=[];const save=()=>put('trips',{...summary(t),open:true});
   return rows.length?put('chunks',{trip:t.id,i:t.chunk++,rows}).then(save):save();}
-const KEEP=['km','fuel','idleS','hotS','engineS','stops','maxRpm','maxBoost','maxSpeed','maxCoolant','warm80','coolStart','chunk','n','spark','start','id'];
+const KEEP=['minVolt','lugS','km','fuel','idleS','hotS','engineS','stops','maxRpm','maxBoost','maxSpeed','maxCoolant','warm80','coolStart','chunk','n','spark','start','id'];
 function summary(t){return {id:t.id,start:t.start,end:t.last||Date.now(),durationS:Math.round(((t.last||Date.now())-t.start)/1000),engineS:Math.round(t.engineS||0),stops:t.stops||0,km:+t.km.toFixed(2),fuelL:+t.fuel.toFixed(3),avgL100:t.km>0.5?+(t.fuel/t.km*100).toFixed(2):null,
   samples:t.n,idleS:Math.round(t.idleS),hotS:Math.round(t.hotS),maxRpm:Math.round(t.maxRpm),maxBoost:+t.maxBoost.toFixed(2),maxSpeed:Math.round(t.maxSpeed),coolantStart:t.coolStart,maxCoolant:t.maxCoolant,warmTo80S:t.warm80,
-  outsideC:weather.t,calib,fields:['t'].concat(FIELDS,EXTRA),supported:[...supported],spark:t.spark,demo:t.demo,state:Object.fromEntries(KEEP.map(k=>[k,t[k]]))};}
+  outsideC:weather.t,minVolt:t.minVolt??null,lugS:Math.round(t.lugS||0),calib,fields:['t'].concat(FIELDS,EXTRA),supported:[...supported],spark:t.spark,demo:t.demo,state:Object.fromEntries(KEEP.map(k=>[k,t[k]]))};}
 const demoTrips=[];
 async function closeTrip(t){
   if(!t)return;await flushChunk(t);const s=summary(t);s.open=false;
   if(t.demo)demoTrips.unshift(s);else await put('trips',s);
-  log(`Trip closed: ${s.km} km`);renderTrips();
+  log(`Trip closed: ${s.km} km`);renderTrips();renderHome();
   if(!t.demo)syncPending();
 }
 // =============== GitHub sync ===============
@@ -885,9 +967,89 @@ function updateCockpit(now){
   // Strip
   const t=rec||paused;
   put$('mAvg','text',t&&t.km>0.3?(t.fuel/t.km*100).toFixed(1):'–');put$('mKm','text',t?t.km.toFixed(1):'–');
+  put$('hRpm','text',r!=null?String(Math.round(r)):'–');put$('hCool','text',c!=null?Math.round(c)+'°':'–');put$('hSpd','text',v!=null?String(Math.round(v)):'–');put$('hVolt','text',live.volt!=null?live.volt.toFixed(1):'–');
   put$('mVolt','text',live.volt!=null?live.volt.toFixed(1):'–');put$('mVolt','class','v'+(live.volt!=null&&((r??0)>500?live.volt<13.2:live.volt<12.2)?' warn':''));
   put$('mIat','text',t?fmt(t.engineS||0):'–');
 }
+
+// =============== home ===============
+const dayMs=86400000;
+function hstat(k,v,u){return `<div><span class="k">${k}</span><span class="v">${v}</span>${u?`<span class="u">${u}</span>`:''}</div>`;}
+function hline(state,title,detail){return `<li><span class="dot ${state}"></span><b>${title}</b><span class="d">${detail}</span></li>`;}
+async function renderHome(){
+  // status
+  const t=$('hTitle'),sub=$('hSub');
+  if(demo){t.textContent='Demo';sub.textContent='Invented values, not your car.';}
+  else if(connected&&live.rpm>300){t.textContent='Engine running';sub.textContent='Tap Drive mode once the phone is on its stand.';}
+  else if(connected){t.textContent='Connected';sub.textContent='Ignition on, engine off.';}
+  else if(parkedSince){t.textContent='Car parked';sub.textContent='The adapter is resting. It reconnects when you start the engine.';}
+  else if(wantConnected){t.textContent='Looking for the car…';sub.textContent='Turn the ignition on.';}
+  else{t.textContent='Car parked';sub.textContent=recall('golf-transport')==='serial'||transport==='serial'?'Opens the connection by itself when you start the engine with the app open.':'Tap Connect adapter with the ignition on.';}
+  $('hLive').hidden=!(connected||demo);
+  const trips=(await getAll('trips')).filter(x=>!x.demo).sort((a,b)=>b.start-a.start);
+  // health
+  const H=[];const recent=trips.slice(0,8);
+  const boost=Math.max(0,...recent.map(x=>x.maxBoost||0));
+  if(!recent.length)H.push(hline('','Turbo','No trips yet.'));
+  else if(boost>=0.9)H.push(hline('ok','Turbo: healthy',`Peak ${boost.toFixed(2)} bar in recent trips. Normal for your engine is 1.0–1.2.`));
+  else H.push(hline('','Turbo: not tested hard lately',`Peak ${boost.toFixed(2)} bar. It shows its full boost only under full throttle above 1800 rpm.`));
+  const volts=recent.map(x=>x.minVolt).filter(v=>v!=null);
+  if(volts.length){const mv=Math.min(...volts);H.push(mv>=13.2?hline('ok','Battery and alternator: fine',`Lowest while running: ${mv.toFixed(1)} V.`):hline('warn','Battery or alternator: check',`Dropped to ${mv.toFixed(1)} V while running. It should stay above 13.2 V.`));}
+  const longT=trips.filter(x=>(x.engineS||0)>=600&&x.maxCoolant>0).slice(0,5);
+  if(longT.length){const mc=Math.max(...longT.map(x=>x.maxCoolant));
+    H.push(mc>=89?hline('ok','Thermostat: fine',`Reaches ${mc}°C on longer trips.`):mc>=84?hline('warn','Thermostat: under watch',`Tops out at ${mc}°C on trips over 10 minutes. Normal is about 90°C. A 20-minute motorway run will settle it.`):hline('bad','Thermostat: probably opening early',`Only ${mc}°C on longer trips. Worth replacing at the next service.`));}
+  let dtc=null;try{dtc=JSON.parse(recall('golf-dtc')||'null');}catch(e){}
+  if(dtc)H.push(dtc.mil||dtc.count?hline('bad','Fault codes stored',`${dtc.count} code${dtc.count===1?'':'s'}, warning light ${dtc.mil?'on':'off'}. Read them in the Car tab and send them to Claude.`):hline('ok','Fault codes: none',`Checked ${new Date(dtc.at).toLocaleDateString('ro-RO',{day:'numeric',month:'short'})}.`));
+  const lastLong=trips.find(x=>(x.hotS||0)>=600);
+  const days=lastLong?Math.floor((Date.now()-lastLong.start)/dayMs):null;
+  if(trips.length)H.push(days!=null&&days<=10?hline('ok','DPF: had a good run',`${days===0?'Today':days+' day'+(days>1?'s':'')+' ago'}: 10+ minutes at 2000+ rpm above 60 km/h.`):hline('warn','DPF: due a long run',(days!=null?`Last one ${days} days ago. `:'No long run recorded yet. ')+'20 minutes on the ring road or motorway lets it clean itself.'));
+  const lug=recent.reduce((a,x)=>a+(x.lugS||0),0);
+  if(recent.length&&lug>20)H.push(hline('warn','Driving: labouring at low revs',`${Math.round(lug)} s in recent trips with the pedal deep under 1300 rpm. Drop a gear before you accelerate hard.`));
+  $('health').innerHTML=H.join('')||'<li class="muted small">Drive a few trips and this fills in.</li>';
+  // this week
+  const wk=trips.filter(x=>Date.now()-x.start<7*dayMs);
+  const km=wk.reduce((a,x)=>a+(x.km||0),0),fuel=wk.reduce((a,x)=>a+(x.fuelL||0),0),idle=wk.reduce((a,x)=>a+(x.idleS||0),0);
+  $('week').innerHTML=hstat('Distance',km.toFixed(0),'km')+hstat('Trips',wk.length,'')+hstat('Consumption',km>1?(fuel/km*100).toFixed(1):'–','L/100 est.')+hstat('Idling',fmt(idle),'min');
+  // last trip
+  const lt=trips[0];
+  $('lastTrip').innerHTML=lt?`<div class="meta mono small">${new Date(lt.start).toLocaleDateString('ro-RO',{weekday:'short',day:'numeric',month:'short'})} · ${new Date(lt.start).toLocaleTimeString('ro-RO',{hour:'2-digit',minute:'2-digit'})} · ${lt.km} km · ${fmt(lt.engineS??lt.durationS)} · ${lt.avgL100!=null?lt.avgL100+' L/100 est. · ':''}max ${lt.maxBoost} bar · coolant up to ${lt.maxCoolant}°C</div>${sparkSvg(lt.spark)}`:'<p class="muted small">No trips yet.</p>';
+  await renderFuel(trips);
+}
+// ---- fuel log: full-to-full. The litres at a fill-up are what was burned since the previous full fill-up.
+async function fuelLegs(trips){
+  const fills=(await getAll('fills')).sort((a,b)=>a.at-b.at);const legs=[];
+  for(let i=1;i<fills.length;i++){
+    const a=fills[i-1],b=fills[i];if(!a.full||!b.full)continue;
+    const inLeg=trips.filter(x=>x.start>=a.at&&x.start<b.at);
+    const appKm=inLeg.reduce((s,x)=>s+(x.km||0),0);
+    const km=(a.odo&&b.odo&&b.odo>a.odo)?b.odo-a.odo:appKm;
+    const rawEst=inLeg.reduce((s,x)=>s+(x.fuelL||0)/(x.calib||1),0);
+    legs.push({to:b.id,km,src:(a.odo&&b.odo)?'odometer':'app',l100:km>0?b.litres/km*100:null,leiKm:km>0?b.lei/km:null,suggest:rawEst>1&&appKm>20?b.litres/rawEst*(appKm/km||1):null});
+  }
+  return {fills,legs};
+}
+async function renderFuel(trips){
+  const {fills,legs}=await fuelLegs(trips);
+  const good=legs.filter(l=>l.l100!=null&&l.km>50);
+  const tl=good.reduce((s,l)=>s+l.l100*l.km,0),tk=good.reduce((s,l)=>s+l.km,0);
+  const lastPrice=fills.length?fills[fills.length-1].lei/fills[fills.length-1].litres:null;
+  const sug=[...legs].reverse().find(l=>l.suggest);
+  $('fuelStats').innerHTML=fills.length?hstat('Real consumption',tk?(tl/tk).toFixed(1):'–','L/100 · measured')+hstat('Cost',good.length?(good.reduce((s,l)=>s+l.leiKm*l.km,0)/tk*100).toFixed(0):'–','lei / 100 km')+hstat('Last price',lastPrice?lastPrice.toFixed(2):'–','lei / L')+hstat('Fill-ups',fills.length,''):'';
+  const byTo=Object.fromEntries(legs.map(l=>[l.to,l]));
+  $('fills').innerHTML=(sug&&Math.abs(sug.suggest-calib)>0.03?`<p class="small">Your real consumption suggests a fuel-estimate correction of <b>${sug.suggest.toFixed(2)}</b> (now ${calib.toFixed(2)}). <button class="btn" id="btnApplyCal" type="button">Apply</button></p>`:'')+
+    (fills.length?[...fills].reverse().map(f=>{const l=byTo[f.id];return `<div class="fill"><div><b>${new Date(f.at).toLocaleDateString('ro-RO',{day:'numeric',month:'short',year:'numeric'})}</b> <span class="meta">· ${f.litres} L · ${f.lei} lei · ${(f.lei/f.litres).toFixed(2)} lei/L${f.odo?' · '+f.odo+' km':''}${f.full?'':' · not full'}</span>
+      ${l&&l.l100!=null?`<div class="meta">${l.km.toFixed(0)} km since previous (${l.src}) · ${(l.leiKm*100).toFixed(0)} lei/100 km</div>`:'<div class="meta">The next full fill-up will give the consumption for this tank.</div>'}</div>
+      <div class="res">${l&&l.l100!=null?l.l100.toFixed(1)+'<span class="meta"> L/100</span>':''}</div><button class="btn" type="button" data-delfill="${f.id}">Delete</button></div>`;}).join(''):'<p class="muted small">Log each fill-up: litres, lei, and the odometer if you can. From the second full tank on, you get your real consumption and cost.</p>');
+  $('btnApplyCal')&&($('btnApplyCal').onclick=()=>{calib=+sug.suggest.toFixed(2);store('golf-calib',String(calib));$('calib').value=calib.toFixed(2);renderHome();});
+  document.querySelectorAll('[data-delfill]').forEach(b=>b.onclick=async()=>{if(b.dataset.armed){await delRec('fills',b.dataset.delfill);syncFills();renderHome();}else{b.dataset.armed='1';b.textContent='Tap again to delete';}});
+}
+$('btnFillOpen').onclick=()=>{$('fillForm').hidden=!$('fillForm').hidden;if(!$('fillForm').hidden)$('fLit').focus();};
+$('btnFillCancel').onclick=()=>{$('fillForm').hidden=true;};
+$('fillForm').onsubmit=async e=>{e.preventDefault();
+  const f={id:'f'+Date.now(),at:Date.now(),litres:+(+$('fLit').value).toFixed(2),lei:+(+$('fLei').value).toFixed(2),odo:$('fOdo').value?Math.round(+$('fOdo').value):null,full:$('fFull').checked};
+  if(!(f.litres>0&&f.lei>0))return;await put('fills',f);$('fillForm').reset();$('fFull').checked=true;$('fillForm').hidden=true;syncFills();renderHome();};
+async function syncFills(){if(!gh.token)return;try{await ghPut('fills.json',JSON.stringify((await getAll('fills')).sort((a,b)=>a.at-b.at),null,1),'Fill-ups');}catch(e){log('Sync fills: '+e.message);}}
+setInterval(()=>{if(!driving&&!document.hidden&&!$('view-home').hidden)renderHome();},5000);
 
 // =============== demo ===============
 let demoTimer=null,dT=0;
@@ -907,11 +1069,22 @@ $('transportSel').onchange=()=>{if(connected){wantConnected=false;dropLink();}se
 $('btnRec').onclick=endTripNow;
 $('btnDemo').onclick=toggleDemo;
 $('btnDtc').onclick=readDtc;
-$('btnFull').onclick=async()=>{document.body.classList.toggle('drive-full');try{if(!document.fullscreenElement)await document.documentElement.requestFullscreen();else await document.exitFullscreen();}catch(e){}};
-document.addEventListener('fullscreenchange',()=>{if(!document.fullscreenElement)document.body.classList.remove('drive-full');});
+// Drive mode: the big cockpit, full screen. Leaving full screen (back gesture or ✕) brings you home.
+let driving=false;
+async function enterDrive(){driving=true;document.body.classList.add('drive-full');
+  document.querySelectorAll('.view').forEach(v=>v.hidden=v.id!=='view-drive');keepAwake();
+  try{await document.documentElement.requestFullscreen();}catch(e){}
+  try{await screen.orientation?.lock?.('landscape');}catch(e){}}
+async function exitDrive(){if(!driving)return;driving=false;document.body.classList.remove('drive-full');
+  const cur=document.querySelector('nav button[aria-current="true"]')?.dataset.view||'home';
+  document.querySelectorAll('.view').forEach(v=>v.hidden=v.id!=='view-'+cur);
+  try{screen.orientation?.unlock?.();}catch(e){}
+  try{if(document.fullscreenElement)await document.exitFullscreen();}catch(e){}renderHome();}
+$('btnDrive').onclick=enterDrive;$('btnExitDrive').onclick=exitDrive;
+document.addEventListener('fullscreenchange',()=>{if(!document.fullscreenElement)exitDrive();});
 document.addEventListener('visibilitychange',()=>{if((connected||rec)&&document.visibilityState==='visible')keepAwake();});
 window.addEventListener('pagehide',()=>{if(rec&&!rec.demo)flushChunk(rec);});
-openDb().then(async()=>{await reviveTrips();renderTrips();autoConnect();syncPending();});
+openDb().then(async()=>{await reviveTrips();renderTrips();renderHome();autoConnect();syncPending();});
 if('serviceWorker' in navigator){navigator.serviceWorker.register('sw.js',{updateViaCache:'none'}).then(r=>r.update()).catch(()=>{});
   // When a new version takes over, reload once so you're never stuck on an old one.
   let reloaded=false;navigator.serviceWorker.addEventListener('controllerchange',()=>{if(!reloaded&&!rec&&!connected){reloaded=true;location.reload();}});}
