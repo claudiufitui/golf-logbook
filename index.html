@@ -174,7 +174,7 @@ input[type=number]{background:var(--panel2);border:1px solid var(--line);color:v
 </div>
 <div class="app">
   <div class="top">
-    <div class="brand">Golfozaur 3000<small>1.9 TDI BLS · v31</small></div>
+    <div class="brand">Golfozaur 3000<small>1.9 TDI BLS · v32</small></div>
     <div class="chips">
       <span class="chip" id="chipBt">Adapter off</span>
       <span class="chip" id="chipGps">GPS off</span>
@@ -1169,12 +1169,13 @@ async function vOpen(){
   ];
   // Each timing request is tried plain (the way the working Mk6 log did it) and with the response-count digit,
   // and once with the receive filter open so we see everything the ECU sends (e.g. repeated setup replies).
-  const P=[{a:'A00F8AFF4AFF',k:0,f:1},{a:'A00F8AFF4AFF',k:1,f:1},{a:'A00F8AFF32FF',k:0,f:1},{a:'A00F8AFF4AFF',k:0,f:0}];
+  const P0=[{a:'A0018AFF4AFF',k:1,f:1},{a:'A0018AFF4AFF',k:0,f:1},{a:'A001CAFF4AFF',k:1,f:1},{a:'A0018AFF4AFF',k:0,f:0}];
+  const P=[...P0,...P0,...P0];   // it opened once in nine tries on 19 Nov: give it more chances
   const vo=VW.variant!=null?[V[VW.variant],...V.filter((_,i)=>i!==VW.variant)]:V;
   const po=VW.param!=null?[P[VW.param],...P.filter((_,i)=>i!==VW.param)]:P;
   for(const v of vo){
     vstep('Trying: '+v.n);
-    for(const c of ['ATWS','ATE0','ATL0','ATS0','ATH1',...v.c,'ATCFC0','ATAL','ATAT1','ATST32'])await vat(c,c==='ATWS'?3000:1500);
+    for(const c of ['ATWS','ATE0','ATL0','ATS0','ATH1',...v.c,'ATCFC0','ATAL','ATAT0','ATST19'])await vat(c,c==='ATWS'?3000:1500);
     let gatewayOk=false;
     for(const pr of po){
       await vat('ATSH200');
@@ -1202,30 +1203,35 @@ async function vOpen(){
 async function vKeep(){if(performance.now()-(VW.lastTx||0)>400){const {fr}=await vsend('A3',1);return fr.some(x=>x.b[0]===0xA1);}return true;}
 async function vClose(){try{await vsend('A8',1,800);}catch(e){}}
 // Send one KWP request (≤5 bytes) and collect the answer, acknowledging the ECU's packets.
-async function vreq(pl,count){
+// Send one KWP request (≤5 bytes) and collect the answer.
+// 19 Nov: the ECU resent its packet three times and hung up because our ACK came 800 ms late: the adapter only hands
+// over what it heard after a quiet gap. So now we ask the ECU (block size 1) to wait for an ACK after every packet,
+// and tell the adapter exactly how many packets to wait for, so each ACK goes out within a few tens of ms.
+async function vreq(pl){
+  const hx=n=>n.toString(16).toUpperCase();
   const f=[0x10|VW.seq,0,pl.length,...pl];VW.seq=(VW.seq+1)&15;
-  let {fr}=await vsend(f.map(H2).join(''),count);
-  let data=[],need=null,acked=false;
-  for(let round=0;round<10;round++){
+  let {fr}=await vsend(f.map(H2).join(''),2,1500);   // the ECU's ACK + its first packet
+  let data=[],need=null,empty=0;
+  for(let round=0;round<60;round++){
     let ack=null,done=false;
     for(const {id,b} of fr){if(id!==VW.rx||!b.length)continue;const op=b[0]>>4,sq=b[0]&15;
-      if(op===0xB||op===0x9){acked=true;continue;}
+      if(op===0xB||op===0x9)continue;
       if(b[0]===0xA8){VW.dead=true;vlog('ECU closed the channel');return null;}
-      if(op===0xA)continue;
       if(op>3)continue;
       if(VW.rseq!=null&&sq!==VW.rseq){const back=(VW.rseq-sq+16)&15;if(back>0&&back<8){VW.retx++;vlog('(repeat of packet '+sq+', ignored)');if(op===0||op===1)ack=(sq+1)&15;continue;}vlog('(packet '+sq+' out of order, expected '+VW.rseq+')');}
       VW.rseq=(sq+1)&15;data.push(...b.slice(1));
-      if(need==null&&data.length>=2)need=((data[0]&0x7F)<<8)|data[1];
+      if(need==null&&data.length>=2)need=((data[0]&0x0F)<<8)|data[1];   // high nibble = flags (0x80 on "busy")
       if(op===0||op===1)ack=(sq+1)&15;
       if(op===1||op===3)done=true;}
     if(done&&need!=null&&data.length-2>=need){
       const msg=data.slice(2,2+need);data=[];need=null;
-      if(ack!=null)await vsend('B'+ack.toString(16).toUpperCase(),0,600);
-      if(msg[0]===0x7F&&msg[2]===0x78){vlog('(ECU busy, waiting)');({fr}=await vsend('A3',0,1500));continue;}
+      if(msg[0]===0x7F&&msg[2]===0x78){   // "busy, answer coming": ACK it and wait longer for the real answer
+        vlog('(ECU busy, waiting)');await vat('ATSTFF');({fr}=await vsend(ack!=null?'B'+hx(ack):'A3',1,4000));await vat('ATST19');continue;}
+      if(ack!=null)await vsend('B'+hx(ack),0,600);
       return msg;}
-    // Not complete yet: acknowledge what needs it (which also opens a window for the rest), else ping.
-    if(!acked&&!fr.length&&round>1)return null;
-    ({fr}=await (ack!=null?vsend('B'+ack.toString(16).toUpperCase(),0,1500):vsend('A3',0,1500)));
+    if(ack!=null){({fr}=await vsend('B'+hx(ack),1,1500));continue;}   // ACK, and wait for exactly the next packet
+    if(!fr.length&&++empty>2)return null;
+    ({fr}=await vsend('A3',2,1500));   // nothing to ACK yet: keep the channel alive and listen
   }
   return null;
 }
@@ -1263,7 +1269,7 @@ async function vRun(kind){
   try{
     for(const t1 of ['8A']){VW.t1=t1;
       if(!(await vOpen()))continue;
-      const s=await vreq([0x10,0x89],2);
+      const s=await vreq([0x10,0x89]);
       if(s&&s[0]===0x50){vstep('Diagnostic session started (10 89)',true);opened=true;break;}
       vstep('Session request answered '+(s?s.map(H2).join(' '):'with nothing')+(t1==='8A'?', retrying with a slower timing':''),false);
       if(s&&s[0]===0x7F){vstep('Trying to read without a session anyway');opened=true;break;}
@@ -1284,7 +1290,7 @@ async function vRun(kind){
         else if(r.err==='no answer'||VW.dead){fails++;
           if(fails>=3){if(reopen++>=3){vstep('Channel kept dropping, stopping at group '+g,false);break;}
             vstep('Channel dropped at group '+g+', reopening');await vClose();VW.dead=false;fails=0;
-            if(!(await vOpen())||!(await vreq([0x10,0x89],2))){vstep('Could not reopen',false);break;}i-=3;}}
+            if(!(await vOpen())||!(await vreq([0x10,0x89]))){vstep('Could not reopen',false);break;}i-=3;}}
         await vKeep();}
       vstep(`${good} of ${groups.length} groups answered${VW.retx?`, ${VW.retx} repeated packets (our acknowledgements were late)`:''}`,good>0);
       await vClose();
