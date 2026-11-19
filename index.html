@@ -174,7 +174,7 @@ input[type=number]{background:var(--panel2);border:1px solid var(--line);color:v
 </div>
 <div class="app">
   <div class="top">
-    <div class="brand">Golfozaur 3000<small>1.9 TDI BLS · v32</small></div>
+    <div class="brand">Golfozaur 3000<small>1.9 TDI BLS · v33</small></div>
     <div class="chips">
       <span class="chip" id="chipBt">Adapter off</span>
       <span class="chip" id="chipGps">GPS off</span>
@@ -967,8 +967,8 @@ function shiftAdvice(now,v,r,ld,lim){
     const upAt=Math.min(L-150,ld>75?3000:ld>50?2400:2000);
     const minAfter=ld>60?1600:1300;
     if(up!=null&&r>=upAt&&up>=minAfter)want=1;
-    // Shift down: labouring (deep pedal under 1300 rpm) or under 1100 rpm, if the lower gear stays under the limit.
-    else if(down!=null&&down<=L-100&&((r<1300&&ld>85)||r<1100))want=-1;
+    // Shift down: labouring (deep pedal under 1300 rpm) or pulling under 1050 rpm, if the lower gear stays under the limit.
+    else if(down!=null&&down<=L-100&&((r<1300&&ld>85)||(r<1050&&ld>=30)))want=-1;   // rolling at ~900 rpm on a light pedal before a stop isn't worth a nag
   }
   live.gear=g;
   if(want!==shiftCand){shiftCand=want;shiftSince=now;}
