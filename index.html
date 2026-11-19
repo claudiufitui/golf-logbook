@@ -174,7 +174,7 @@ input[type=number]{background:var(--panel2);border:1px solid var(--line);color:v
 </div>
 <div class="app">
   <div class="top">
-    <div class="brand">Golfozaur 3000<small>1.9 TDI BLS · v28</small></div>
+    <div class="brand">Golfozaur 3000<small>1.9 TDI BLS · v29</small></div>
     <div class="chips">
       <span class="chip" id="chipBt">Adapter off</span>
       <span class="chip" id="chipGps">GPS off</span>
@@ -1160,15 +1160,28 @@ async function vsend(hex,count,timeout=1500){
 async function vat(c,t=1500){const r=await cmd(c,t);vlog(c+' → '+clean(r));return clean(r);}
 // Open the channel to the engine ECU.
 async function vOpen(){
-  for(const c of ['ATWS','ATE0','ATL0','ATS0','ATH1','ATSP6','ATCAF0','ATCFC0','ATAL','ATAT1','ATST32'])await vat(c,c==='ATWS'?3000:1500);
-  await vat('ATSH200');
-  if((await vat('ATCRA201')).includes('?')){vstep('Adapter has no ATCRA, using ATCF/ATCM');await vat('ATCF201');await vat('ATCM7FF');VW.noCra=true;}
+  // TP 2.0 frames must go out with their real length (7 bytes for the channel request). In plain ATSP6 + ATCAF0
+  // many adapters pad every frame to 8 bytes, and the gateway ignores it. So try several ways, and remember what worked.
+  const V=[
+    {n:'CAN 500k, variable length (ATV1)',c:['ATSP6','ATCAF0','ATV1'],f:true},
+    {n:'user protocol B (ATPB C0 01), variable length',c:['ATPBC001','ATSPB','ATCAF0','ATV1'],f:true},
+    {n:'variable length, no receive filter',c:['ATSP6','ATCAF0','ATV1'],f:false},
+    {n:'CAN 500k, fixed 8-byte frames',c:['ATSP6','ATCAF0'],f:true},
+  ];
+  const order=VW.variant!=null?[V[VW.variant],...V.filter((_,i)=>i!==VW.variant)]:V;
   let ok=null;
-  for(let i=0;i<4&&!ok;i++){const {fr}=await vsend('01C00010000301',1,2000);
-    const f=fr.find(x=>x.id===0x201&&(x.b[1]&0xF0)===0xD0);
-    if(f){if(f.b[1]!==0xD0){vstep('ECU refused the channel (code '+H2(f.b[1])+')',false);return false;}ok=f;}
-    else await new Promise(r=>setTimeout(r,400));}
-  if(!ok){vstep('No answer to the channel request on 0x200',false);return false;}
+  for(const v of order){
+    vstep('Trying: '+v.n);
+    for(const c of ['ATWS','ATE0','ATL0','ATS0','ATH1',...v.c,'ATCFC0','ATAL','ATAT1','ATST32'])await vat(c,c==='ATWS'?3000:1500);
+    await vat('ATSH200');VW.noCra=false;
+    if(v.f){if((await vat('ATCRA201')).includes('?')){vstep('Adapter has no ATCRA, using ATCF/ATCM');await vat('ATCF201');await vat('ATCM7FF');VW.noCra=true;}}
+    for(let i=0;i<3&&!ok;i++){const {fr}=await vsend('01C00010000301',v.f?1:0,2000);
+      const f=fr.find(x=>x.id===0x201&&(x.b[1]&0xF0)===0xD0);
+      if(f){if(f.b[1]!==0xD0){vstep('ECU refused the channel (code '+H2(f.b[1])+')',false);return false;}ok=f;VW.variant=V.indexOf(v);vstep('Gateway answered with: '+v.n,true);}
+      else{if(!v.f&&fr.length)vlog('(other traffic seen: '+fr.slice(0,6).map(x=>x.id.toString(16)+':'+x.b.map(H2).join('')).join(' ')+')');await new Promise(r=>setTimeout(r,300));}}
+    if(ok){if(!v.f){await vat('ATCRA201');}break;}
+  }
+  if(!ok){vstep('No answer to the channel request on 0x200, any way I tried',false);return false;}
   const idA=((ok.b[3]&7)<<8)|ok.b[2],idB=((ok.b[5]&7)<<8)|ok.b[4];
   // Documented: the ECU sends on the first ID (0x300), we send on the second (0x740). If that gets no answer, try it swapped.
   for(const [rx,tx] of [[idA,idB],[idB,idA]]){
