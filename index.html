@@ -174,7 +174,7 @@ input[type=number]{background:var(--panel2);border:1px solid var(--line);color:v
 </div>
 <div class="app">
   <div class="top">
-    <div class="brand">Golfozaur 3000<small>1.9 TDI BLS · v29</small></div>
+    <div class="brand">Golfozaur 3000<small>1.9 TDI BLS · v30</small></div>
     <div class="chips">
       <span class="chip" id="chipBt">Adapter off</span>
       <span class="chip" id="chipGps">GPS off</span>
@@ -1160,39 +1160,42 @@ async function vsend(hex,count,timeout=1500){
 async function vat(c,t=1500){const r=await cmd(c,t);vlog(c+' → '+clean(r));return clean(r);}
 // Open the channel to the engine ECU.
 async function vOpen(){
-  // TP 2.0 frames must go out with their real length (7 bytes for the channel request). In plain ATSP6 + ATCAF0
-  // many adapters pad every frame to 8 bytes, and the gateway ignores it. So try several ways, and remember what worked.
+  // TP 2.0 frames must go out with their real length (7 bytes for the channel request); padded 8-byte frames are ignored.
+  // 19 Nov: ATV1 got the gateway to answer, but the engine ECU closed the channel (A8) on our timing request with T3=5 ms.
+  // vag-blocks (proven on PD TDIs) asks for T3=10 ms (4A), so that comes first now. Whatever works is remembered.
   const V=[
-    {n:'CAN 500k, variable length (ATV1)',c:['ATSP6','ATCAF0','ATV1'],f:true},
-    {n:'user protocol B (ATPB C0 01), variable length',c:['ATPBC001','ATSPB','ATCAF0','ATV1'],f:true},
-    {n:'variable length, no receive filter',c:['ATSP6','ATCAF0','ATV1'],f:false},
-    {n:'CAN 500k, fixed 8-byte frames',c:['ATSP6','ATCAF0'],f:true},
+    {n:'CAN 500k, variable length (ATV1)',c:['ATSP6','ATCAF0','ATV1']},
+    {n:'user protocol B (ATPB C0 01)',c:['ATPBC001','ATSPB','ATCAF0','ATV1']},
   ];
-  const order=VW.variant!=null?[V[VW.variant],...V.filter((_,i)=>i!==VW.variant)]:V;
-  let ok=null;
-  for(const v of order){
+  const P=['A00F8AFF4AFF','A00F8AFF32FF','A00FCAFF4AFF'];
+  const vo=VW.variant!=null?[V[VW.variant],...V.filter((_,i)=>i!==VW.variant)]:V;
+  const po=VW.param!=null?[VW.param,...P.filter(x=>x!==VW.param)]:P;
+  for(const v of vo){
     vstep('Trying: '+v.n);
     for(const c of ['ATWS','ATE0','ATL0','ATS0','ATH1',...v.c,'ATCFC0','ATAL','ATAT1','ATST32'])await vat(c,c==='ATWS'?3000:1500);
-    await vat('ATSH200');VW.noCra=false;
-    if(v.f){if((await vat('ATCRA201')).includes('?')){vstep('Adapter has no ATCRA, using ATCF/ATCM');await vat('ATCF201');await vat('ATCM7FF');VW.noCra=true;}}
-    for(let i=0;i<3&&!ok;i++){const {fr}=await vsend('01C00010000301',v.f?1:0,2000);
-      const f=fr.find(x=>x.id===0x201&&(x.b[1]&0xF0)===0xD0);
-      if(f){if(f.b[1]!==0xD0){vstep('ECU refused the channel (code '+H2(f.b[1])+')',false);return false;}ok=f;VW.variant=V.indexOf(v);vstep('Gateway answered with: '+v.n,true);}
-      else{if(!v.f&&fr.length)vlog('(other traffic seen: '+fr.slice(0,6).map(x=>x.id.toString(16)+':'+x.b.map(H2).join('')).join(' ')+')');await new Promise(r=>setTimeout(r,300));}}
-    if(ok){if(!v.f){await vat('ATCRA201');}break;}
+    let gatewayOk=false;
+    for(const pr of po){
+      await vat('ATSH200');
+      if((await vat('ATCRA201')).includes('?')){await vat('ATCF201');await vat('ATCM7FF');}
+      let ok=null;
+      for(let i=0;i<3&&!ok;i++){const {fr}=await vsend('01C00010000301',1,2000);
+        const f=fr.find(x=>x.id===0x201&&(x.b[1]&0xF0)===0xD0);
+        if(f){if(f.b[1]!==0xD0){vstep('ECU refused the channel (code '+H2(f.b[1])+')',false);break;}ok=f;}
+        else await new Promise(r=>setTimeout(r,300));}
+      if(!ok)break;   // gateway silent with this adapter mode: next mode
+      if(!gatewayOk){gatewayOk=true;vstep('Gateway answered',true);}
+      const rx=((ok.b[3]&7)<<8)|ok.b[2],tx=((ok.b[5]&7)<<8)|ok.b[4];VW.rx=rx;VW.tx=tx;
+      await vat('ATSH'+tx.toString(16).padStart(3,'0').toUpperCase());
+      await vat('ATCRA'+rx.toString(16).padStart(3,'0').toUpperCase());
+      const {fr}=await vsend(pr,1);
+      const p=fr.find(x=>x.id===rx&&x.b[0]===0xA1);
+      if(p){VW.variant=V.indexOf(v);VW.param=pr;VW.params=p.b;VW.seq=0;VW.rseq=null;
+        vstep(`Channel open (${v.n}, timing ${pr.slice(2)}): we send on ${tx.toString(16)}, the ECU answers on ${rx.toString(16)}. ECU timing ${p.b.map(H2).join(' ')}`,true);return true;}
+      vstep('ECU '+(fr.some(x=>x.b[0]===0xA8)?'closed the channel':'did not answer')+' on timing '+pr.slice(2),false);
+      await new Promise(r=>setTimeout(r,300));
+    }
   }
-  if(!ok){vstep('No answer to the channel request on 0x200, any way I tried',false);return false;}
-  const idA=((ok.b[3]&7)<<8)|ok.b[2],idB=((ok.b[5]&7)<<8)|ok.b[4];
-  // Documented: the ECU sends on the first ID (0x300), we send on the second (0x740). If that gets no answer, try it swapped.
-  for(const [rx,tx] of [[idA,idB],[idB,idA]]){
-    VW.rx=rx;VW.tx=tx;
-    await vat('ATSH'+tx.toString(16).padStart(3,'0').toUpperCase());
-    if(VW.noCra){await vat('ATCF'+rx.toString(16).padStart(3,'0').toUpperCase());}else await vat('ATCRA'+rx.toString(16).padStart(3,'0').toUpperCase());
-    const {fr}=await vsend('A00F'+VW.t1+'FF32FF',1);
-    const p=fr.find(x=>x.id===rx&&x.b[0]===0xA1);
-    if(p){vstep(`Channel open: we send on ${tx.toString(16)}, the ECU answers on ${rx.toString(16)}. ECU timing ${p.b.map(H2).join(' ')}`,true);VW.seq=0;VW.rseq=null;VW.params=p.b;return true;}
-  }
-  vstep('Channel offered, but the ECU ignored the timing request',false);return false;
+  vstep('Could not open a channel to the engine',false);return false;
 }
 async function vKeep(){if(performance.now()-(VW.lastTx||0)>400){const {fr}=await vsend('A3',1);return fr.some(x=>x.b[0]===0xA1);}return true;}
 async function vClose(){try{await vsend('A8',1,800);}catch(e){}}
@@ -1231,7 +1234,7 @@ Object.assign(VWF,{8:(a,b)=>[(a<<8|b).toString(2).padStart(16,'0'),'bits'],20:(a
 const VWG={1:'Idle: rpm · fuel mg/str · inj. duration · coolant',2:'rpm · pedal · status · coolant',3:'rpm · air specified · air actual · EGR duty',4:'rpm · injection start · duration · torsion',5:'Start: rpm · start quantity · sync · coolant',7:'fuel temp · – · intake air · coolant',8:'rpm · torque wanted · torque limit · smoke limit',10:'air mass · ATMOSPHERIC pressure · boost · pedal',11:'rpm · boost specified · boost actual · N75 turbo duty',12:'glow status · pre-glow s · BATTERY V · coolant',13:'Injector correction cyl 1 · 2 · 3 · 4',15:'rpm · TORQUE · FUEL L/H · torque wanted',16:'ALTERNATOR load · – · – · voltage',18:'Injector status cyl 1–4',23:'Injector timing deviation cyl 1–4',62:'coolant engine · coolant RADIATOR (thermostat test) · outside · intake',64:'coolant · radiator outlet · fan duty',67:'temp before turbo · temp in DPF · DPF pressure diff · offset',68:'DPF LOAD % · soot/ash g · learned',69:'DPF regeneration status',70:'regen status · regen time · failed regens · successful regens',71:'rpm · post-injection mg · post-inj. start · duration',73:'fuel since regen · KM SINCE REGEN · time since regen · DPF load %',74:'rpm · temp before turbo · lambda · offset',75:'temp before turbo · temp before DPF · DPF load % · temp after DPF'};
 function vdec([t,a,b]){const f=VWF[t];if(!f)return `? (${H2(t)} ${H2(a)} ${H2(b)})`;const [v,u]=f(a,b);return (typeof v==='number'?(Math.abs(v)>=100?Math.round(v):+v.toFixed(2)):v)+(u?' '+u:'');}
 async function vGroup(g){
-  const m=await vreq([0x21,g],4);
+  const m=await vreq([0x21,g]);
   if(!m)return {g,err:'no answer'};
   if(m[0]===0x7F)return {g,err:'refused '+H2(m[2]??0)};
   if(m[0]!==0x61||m[1]!==g)return {g,err:'odd reply '+m.map(H2).join(' ')};
@@ -1256,7 +1259,7 @@ async function vRun(kind){
   vstep(kind==='scan'?'Full scan: groups 1 to 255':'Connection test');
   let opened=false;
   try{
-    for(const t1 of ['8A','CA']){VW.t1=t1;
+    for(const t1 of ['8A']){VW.t1=t1;
       if(!(await vOpen()))continue;
       const s=await vreq([0x10,0x89],2);
       if(s&&s[0]===0x50){vstep('Diagnostic session started (10 89)',true);opened=true;break;}
