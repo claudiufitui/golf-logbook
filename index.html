@@ -188,7 +188,7 @@ input[type=number]{background:var(--panel2);border:1px solid var(--line);color:v
 </div>
 <div class="app">
   <div class="top">
-    <div class="brand">Golfozaur 3000<small>1.9 TDI BLS · v36</small></div>
+    <div class="brand">Golfozaur 3000<small>1.9 TDI BLS · v37</small></div>
     <div class="chips">
       <span class="chip" id="chipBt">Adapter off</span>
       <span class="chip" id="chipGps">GPS off</span>
@@ -1356,10 +1356,21 @@ async function pickDrive(o){$('orientPick').hidden=true;store('golf-orient',o);a
 document.addEventListener('fullscreenchange',()=>{if(!document.fullscreenElement)exitDrive();});
 document.addEventListener('visibilitychange',()=>{if((connected||rec)&&document.visibilityState==='visible')keepAwake();});
 window.addEventListener('pagehide',()=>{if(rec&&!rec.demo)flushChunk(rec);});
-openDb().then(async()=>{await reviveTrips();renderTrips();renderHome();autoConnect();syncPending();});
-if('serviceWorker' in navigator){navigator.serviceWorker.register('sw.js',{updateViaCache:'none'}).then(r=>r.update()).catch(()=>{});
-  // When a new version takes over, reload once so you're never stuck on an old one.
-  let reloaded=false;navigator.serviceWorker.addEventListener('controllerchange',()=>{if(!reloaded&&!rec&&!connected){reloaded=true;location.reload();}});}
+// Check for a new version BEFORE touching Bluetooth: reloading while the adapter link is being opened
+// could take the whole app down (it closed itself on open, right after updates).
+var swReloading=false;
+const swReady=new Promise(res=>{
+  if(!('serviceWorker' in navigator))return res();
+  const done=()=>res();setTimeout(done,4000);
+  navigator.serviceWorker.register('sw.js',{updateViaCache:'none'}).then(async r=>{
+    try{await r.update();}catch(e){}
+    const w=r.installing||r.waiting;if(!w)return done();   // nothing new: carry on
+    // a new version is installing: the controllerchange handler reloads; if it doesn't come, carry on anyway
+  }).catch(done);
+});
+openDb().then(async()=>{await reviveTrips();renderTrips();renderHome();await swReady;if(!swReloading){autoConnect();syncPending();}});
+// When a new version takes over: reload once, but only if Bluetooth isn't open or opening. Otherwise it waits for next time.
+if('serviceWorker' in navigator)navigator.serviceWorker.addEventListener('controllerchange',()=>{if(!swReloading&&!rec&&!connected&&!wantConnected){swReloading=true;location.reload();}});
 updateCockpit(performance.now());
 })();
 </script>
