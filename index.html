@@ -118,7 +118,10 @@ body.drive-full .tile{min-height:0}
 /* ---- Home ---- */
 .hero{display:flex;flex-direction:column;gap:12px}
 .hero-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
-.hero-title{font-family:var(--display);font-weight:700;font-size:28px;line-height:1.1}
+.hero-title{font-family:var(--display);font-weight:700;font-size:28px;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hero-top>div:first-child{min-width:0;flex:1}
+#hSub{line-height:1.4;min-height:2.8em}
+.livebar.off{opacity:.4}
 .livebar{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;background:var(--panel2);border-radius:10px;padding:10px 12px}
 .livebar div,.stats div{display:flex;flex-direction:column;min-width:0}
 .livebar .k,.stats .k{font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted)}
@@ -185,7 +188,7 @@ input[type=number]{background:var(--panel2);border:1px solid var(--line);color:v
 </div>
 <div class="app">
   <div class="top">
-    <div class="brand">Golfozaur 3000<small>1.9 TDI BLS · v35</small></div>
+    <div class="brand">Golfozaur 3000<small>1.9 TDI BLS · v36</small></div>
     <div class="chips">
       <span class="chip" id="chipBt">Adapter off</span>
       <span class="chip" id="chipGps">GPS off</span>
@@ -208,7 +211,7 @@ input[type=number]{background:var(--panel2);border:1px solid var(--line);color:v
           <div><div class="hero-title" id="hTitle">Car parked</div><div class="muted small" id="hSub">Connect the adapter with the ignition on.</div></div>
           <span class="chip" id="tripState">No trip</span>
         </div>
-        <div class="livebar" id="hLive" hidden>
+        <div class="livebar off" id="hLive">
           <div><span class="k">RPM</span><span class="v" id="hRpm">–</span></div>
           <div><span class="k">Coolant</span><span class="v" id="hCool">–</span></div>
           <div><span class="k">Speed</span><span class="v" id="hSpd">–</span></div>
@@ -1094,7 +1097,7 @@ async function renderHome(){
   else if(parkedSince){t.textContent='Car parked';sub.textContent='The adapter is resting. It reconnects when you start the engine.';}
   else if(wantConnected){t.textContent='Looking for the car…';sub.textContent='Turn the ignition on.';}
   else{t.textContent='Car parked';sub.textContent=recall('golf-transport')==='serial'||transport==='serial'?'Opens the connection by itself when you start the engine with the app open.':'Tap Connect adapter with the ignition on.';}
-  $('hLive').hidden=!(connected||demo);
+  $('hLive').classList.toggle('off',!(connected||demo));
   const trips=(await getAll('trips')).filter(x=>!x.demo).sort((a,b)=>b.start-a.start);
   // health
   const H=[];const recent=trips.slice(0,8);
