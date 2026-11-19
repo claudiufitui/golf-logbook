@@ -188,7 +188,7 @@ input[type=number]{background:var(--panel2);border:1px solid var(--line);color:v
 </div>
 <div class="app">
   <div class="top">
-    <div class="brand">Golfozaur 3000<small>1.9 TDI BLS · v38</small></div>
+    <div class="brand">Golfozaur 3000<small>1.9 TDI BLS · v39</small></div>
     <div class="chips">
       <span class="chip" id="chipBt">Adapter off</span>
       <span class="chip" id="chipGps">GPS off</span>
@@ -1199,10 +1199,14 @@ async function vOpen(){
   ];
   // Each timing request is tried plain (the way the working Mk6 log did it) and with the response-count digit,
   // and once with the receive filter open so we see everything the ECU sends (e.g. repeated setup replies).
-  const P0=[{a:'A0018AFF4AFF',k:1,f:1},{a:'A0018AFF4AFF',k:0,f:1},{a:'A001CAFF4AFF',k:1,f:1},{a:'A0018AFF4AFF',k:0,f:0}];
-  const P=[...P0,...P0,...P0];   // it opened once in nine tries on 19 Nov: give it more chances
+  // 19 Nov evening: block size 1 worked, but four ACK round trips per group gave the ECU four chances to give up on us.
+  // Block size 15 sends a whole group in one go and needs a single ACK, so it comes first now.
+  const P0=[{a:'A00F8AFF4AFF',k:1,f:1,bs:15},{a:'A00FCAFF4AFF',k:1,f:1,bs:15},{a:'A0018AFF4AFF',k:1,f:1,bs:1},{a:'A001CAFF4AFF',k:1,f:1,bs:1}];
+  const P=[...P0,...P0,...P0];
   const vo=VW.variant!=null?[V[VW.variant],...V.filter((_,i)=>i!==VW.variant)]:V;
   const po=VW.param!=null?[P[VW.param],...P.filter((_,i)=>i!==VW.param)]:P;
+  // Close any channel left over from before, politely, so the ECU isn't still holding it.
+  if(VW.tx&&VW.open){try{await vsend('A8',0,300);}catch(e){}VW.open=false;}
   for(const v of vo){
     vstep('Trying: '+v.n);
     for(const c of ['ATWS','ATE0','ATL0','ATS0','ATH1',...v.c,'ATCFC0','ATAL','ATAT0','ATST19'])await vat(c,c==='ATWS'?3000:1500);
@@ -1222,10 +1226,14 @@ async function vOpen(){
       if(pr.f)await vat('ATCRA'+rx.toString(16).padStart(3,'0').toUpperCase());else await vat('ATCRA');
       const {fr}=await vsend(pr.a,pr.k);
       const p=fr.find(x=>x.id===rx&&x.b[0]===0xA1);
-      if(p){VW.variant=V.indexOf(v);VW.param=P.indexOf(pr);if(!pr.f)await vat('ATCRA'+rx.toString(16).padStart(3,'0').toUpperCase());VW.params=p.b;VW.seq=0;VW.rseq=null;
+      if(p){VW.variant=V.indexOf(v);VW.param=P.indexOf(pr);VW.bs=pr.bs;VW.open=true;VW.mine=pr.a.slice(2);if(!pr.f)await vat('ATCRA'+rx.toString(16).padStart(3,'0').toUpperCase());VW.params=p.b;VW.seq=0;VW.rseq=null;
         vstep(`Channel open (${v.n}, ${pr.a}${pr.k?' +count':''}${pr.f?'':' unfiltered'}): we send on ${tx.toString(16)}, the ECU answers on ${rx.toString(16)}. ECU timing ${p.b.map(H2).join(' ')}`,true);return true;}
-      vstep('ECU '+(fr.some(x=>x.b[0]===0xA8)?'closed the channel':'did not answer')+' on '+pr.a+(pr.k?' +count':'')+(pr.f?'':' unfiltered')+(fr.length?' · saw '+fr.map(x=>x.id.toString(16)+':'+x.b.map(H2).join('')).join(' '):''),false);
-      await new Promise(r=>setTimeout(r,300));
+      const hung=fr.some(x=>x.b[0]===0xA8);
+      vstep('ECU '+(hung?'closed the channel':'did not answer')+' on '+pr.a+(fr.length?' · saw '+fr.map(x=>x.id.toString(16)+':'+x.b.map(H2).join('')).join(' '):''),false);
+      // A disconnect must be answered with a disconnect; without it the ECU may keep the half-open channel and
+      // refuse the next one for a few seconds. Then give it a moment.
+      if(hung)await vsend('A8',0,300);
+      await new Promise(r=>setTimeout(r,1200));
     }
   }
   vstep('Could not open a channel to the engine',false);return false;
@@ -1237,16 +1245,18 @@ async function vClose(){try{await vsend('A8',1,800);}catch(e){}}
 // 19 Nov: the ECU resent its packet three times and hung up because our ACK came 800 ms late: the adapter only hands
 // over what it heard after a quiet gap. So now we ask the ECU (block size 1) to wait for an ACK after every packet,
 // and tell the adapter exactly how many packets to wait for, so each ACK goes out within a few tens of ms.
-async function vreq(pl){
+async function vreq(pl,nFrames){
   const hx=n=>n.toString(16).toUpperCase();
   const f=[0x10|VW.seq,0,pl.length,...pl];VW.seq=(VW.seq+1)&15;
-  let {fr}=await vsend(f.map(H2).join(''),2,1500);   // the ECU's ACK + its first packet
+  // Block size 15: the ECU sends the whole answer in one burst; tell the adapter how many packets to wait for.
+  let {fr}=await vsend(f.map(H2).join(''),VW.bs>1&&nFrames?Math.min(15,1+nFrames):2,1500);
   let data=[],need=null,empty=0;
   for(let round=0;round<60;round++){
     let ack=null,done=false;
     for(const {id,b} of fr){if(id!==VW.rx||!b.length)continue;const op=b[0]>>4,sq=b[0]&15;
       if(op===0xB||op===0x9)continue;
-      if(b[0]===0xA8){VW.dead=true;vlog('ECU closed the channel');return null;}
+      if(b[0]===0xA8){VW.dead=true;VW.open=false;vlog('ECU closed the channel');await vsend('A8',0,300);return null;}
+      if(b[0]===0xA3){vlog('(ECU checks we are there: answering)');await vsend('A1'+(VW.mine||'0F8AFF4AFF'),0,300);continue;}
       if(op>3)continue;
       if(VW.rseq!=null&&sq!==VW.rseq){const back=(VW.rseq-sq+16)&15;if(back>0&&back<8){VW.retx++;vlog('(repeat of packet '+sq+', ignored)');if(op===0||op===1)ack=(sq+1)&15;continue;}vlog('(packet '+sq+' out of order, expected '+VW.rseq+')');}
       VW.rseq=(sq+1)&15;data.push(...b.slice(1));
@@ -1272,7 +1282,8 @@ Object.assign(VWF,{8:(a,b)=>[(a<<8|b).toString(2).padStart(16,'0'),'bits'],20:(a
 const VWG={1:'Idle: rpm · fuel mg/str · inj. duration · coolant',2:'rpm · pedal · status · coolant',3:'rpm · air specified · air actual · EGR duty',4:'rpm · injection start · duration · torsion',5:'Start: rpm · start quantity · sync · coolant',7:'fuel temp · – · intake air · coolant',8:'rpm · torque wanted · torque limit · smoke limit',10:'air mass · ATMOSPHERIC pressure · boost · pedal',11:'rpm · boost specified · boost actual · N75 turbo duty',12:'glow status · pre-glow s · BATTERY V · coolant',13:'Injector correction cyl 1 · 2 · 3 · 4',15:'rpm · TORQUE · FUEL L/H · torque wanted',16:'ALTERNATOR load · – · – · voltage',18:'Injector status cyl 1–4',23:'Injector timing deviation cyl 1–4',62:'coolant engine · coolant RADIATOR (thermostat test) · outside · intake',64:'coolant · radiator outlet · fan duty',67:'temp before turbo · temp in DPF · DPF pressure diff · offset',68:'DPF LOAD % · soot/ash g · learned',69:'DPF regeneration status',70:'regen status · regen time · failed regens · successful regens',71:'rpm · post-injection mg · post-inj. start · duration',73:'fuel since regen · KM SINCE REGEN · time since regen · DPF load %',74:'rpm · temp before turbo · lambda · offset',75:'temp before turbo · temp before DPF · DPF load % · temp after DPF'};
 function vdec([t,a,b]){const f=VWF[t];if(!f)return `? (${H2(t)} ${H2(a)} ${H2(b)})`;const [v,u]=f(a,b);return (typeof v==='number'?(Math.abs(v)>=100?Math.round(v):+v.toFixed(2)):v)+(u?' '+u:'');}
 async function vGroup(g){
-  const m=await vreq([0x21,g]);
+  const m=await vreq([0x21,g],VW.gframes||4);
+  if(m&&m[0]===0x61)VW.gframes=Math.ceil((m.length+2)/7);
   if(!m)return {g,err:'no answer'};
   if(m[0]===0x7F)return {g,err:'refused '+H2(m[2]??0)};
   if(m[0]!==0x61||m[1]!==g)return {g,err:'odd reply '+m.map(H2).join(' ')};
@@ -1307,10 +1318,14 @@ async function vRun(kind){
     }
     if(!opened){vstep('Could not open VW diagnostics. The report will tell Claude why.',false);}
     else{
-      const id=await vreq([0x1A,0x9B]);
+      let cachedId=null;try{cachedId=JSON.parse(recall('golf-vw')||'{}').ecuId||null;}catch(e){}
+      const id=(VW.bs>1&&cachedId)?null:await vreq([0x1A,0x9B]);if(!id&&cachedId){VW.ecuId=cachedId;vstep('ECU: '+cachedId+' (read before)',true);}
       if(id&&id[0]===0x5A){VW.ecuId=String.fromCharCode(...id.slice(2)).replace(/[^\x20-\x7E]/g,' ').replace(/\s+/g,' ').trim();vstep('ECU: '+VW.ecuId,true);}
-      else vstep('Identification answered '+(id?id.map(H2).join(' '):'with nothing'),false);
-      const groups=kind==='scan'?Array.from({length:255},(_,i)=>i+1):[1,3,10,11,12,13,15,16,62,68,70,73,75];
+      else if(!cachedId)vstep('Identification answered '+(id?id.map(H2).join(' '):'with nothing'),false);
+      // A full scan picks up where the last one stopped: groups already read (this session or saved) are skipped.
+      if(kind==='scan'){try{const old=JSON.parse(recall('golf-vw')||'{}').results||{};for(const k in old)if(old[k]&&old[k].raw&&!VW.results[k])VW.results[k]=old[k];}catch(e){}}
+      const groups=kind==='scan'?Array.from({length:255},(_,i)=>i+1).filter(g=>!(VW.results[g]&&VW.results[g].raw)):[1,3,10,11,12,13,15,16,62,68,70,73,75];
+      if(kind==='scan')vstep(`${255-groups.length} groups already read, ${groups.length} to go`);
       let fails=0,reopen=0,good=0;
       for(let i=0;i<groups.length;i++){const g=groups[i];
         if(!connected){vstep('Adapter lost, stopping',false);break;}
