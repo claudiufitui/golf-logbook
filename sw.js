@@ -1,5 +1,5 @@
 // Always ask GitHub for the newest file (skipping the browser's 10-minute cache); fall back to the saved copy offline.
-const C='golf-logbook-v33';
+const C='golf-logbook-v34';
 self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.addAll(['./','index.html','manifest.webmanifest','icon-192.png','icon-512.png'])));});
 self.addEventListener('activate',e=>e.waitUntil((async()=>{for(const k of await caches.keys())if(k!==C)await caches.delete(k);await self.clients.claim();})()));
 self.addEventListener('fetch',e=>{

@@ -174,7 +174,7 @@ input[type=number]{background:var(--panel2);border:1px solid var(--line);color:v
 </div>
 <div class="app">
   <div class="top">
-    <div class="brand">Golfozaur 3000<small>1.9 TDI BLS · v33</small></div>
+    <div class="brand">Golfozaur 3000<small>1.9 TDI BLS · v34</small></div>
     <div class="chips">
       <span class="chip" id="chipBt">Adapter off</span>
       <span class="chip" id="chipGps">GPS off</span>
@@ -633,6 +633,11 @@ function payload(r,mode,pid){
     const hex=L.slice(i+want.length);const out=[];for(let j=0;j+1<hex.length;j+=2)out.push(parseInt(hex.slice(j,j+2),16));if(out.length&&!out.some(isNaN))return out;}
   return null;
 }
+let lateInit=false;
+// The rest of the setup, once the ECU answers (after connecting with the ignition off).
+async function finishInit(){lateInit=false;const first=await cmd('0100',4000);log('0100 → '+clean(first));if(!payload(first,'41','00')){lateInit=true;return;}
+  const t0=performance.now();const a=await cmd('010C1',1500);suffix=payload(a,'41','0C')?'1':'';store('golf-suffix',suffix);log('Single-answer mode '+(suffix?'on':'off')+' ('+Math.round(performance.now()-t0)+' ms)');
+  await readSupported(first);await readVehicle();}
 async function initElm(){
   if(parkedSince){
     const v=await cmd('ATRV',1500);const m=(v||'').match(/(\d+(\.\d+)?)\s*V/i);const volts=m?parseFloat(m[1]):null;
@@ -642,13 +647,20 @@ async function initElm(){
   const savedProto=recall('golf-proto');
   for(const s of ['ATWS','ATE0','ATL0','ATS0','ATH0','ATAT2',savedProto?'ATSP'+savedProto:'ATSP0']){const r=await cmd(s,s==='ATWS'?3000:1500);log(s+' → '+clean(r));}
   let first=await cmd('0100',savedProto?4000:12000);log('0100 → '+clean(first));
-  if(!payload(first,'41','00')&&savedProto){log('Saved protocol failed, searching…');await cmd('ATSP0');first=await cmd('0100',12000);log('0100 → '+clean(first));}
+  // Ignition still off (you connect before turning the key): don't go searching for a protocol, which takes
+  // 15 s and would miss the start. Keep the known protocol, start watching the battery straight away,
+  // and finish setting up once the engine answers.
+  if(!payload(first,'41','00')&&savedProto){
+    log('ECU silent: ignition off. Watching the battery until you start.');
+    isCan=['6','7','8','9','A','B','C'].includes(savedProto);suffix=recall('golf-suffix')??'';lateInit=true;
+    $('btnDtc').disabled=false;startGps();keepAwake();if(!demo)poll();return;}
+  lateInit=false;
   const dp=await cmd('ATDPN');log('ATDPN → '+clean(dp));
   const n=(dp||'').replace(/[^0-9A-C]/gi,'').slice(-1).toUpperCase();isCan=['6','7','8','9','A','B','C'].includes(n);
-  if(n)store('golf-proto',n);
+  if(n&&payload(first,'41','00'))store('golf-proto',n);
   // Telling the adapter to expect one answer saves it waiting for more: much faster.
   const t0=performance.now();const a=await cmd('010C1',1500);const fastOk=!!payload(a,'41','0C');
-  suffix=fastOk?'1':'';log('Single-answer mode '+(fastOk?'on':'off')+' ('+Math.round(performance.now()-t0)+' ms)');
+  suffix=fastOk?'1':'';store('golf-suffix',suffix);log('Single-answer mode '+(fastOk?'on':'off')+' ('+Math.round(performance.now()-t0)+' ms)');
   await readSupported(first);
   await readVehicle();
   $('btnDtc').disabled=false;
@@ -734,6 +746,7 @@ async function poll(){
     if(stopped()){
       await readPid('0C');
       if(!stopped()){if(waitStart)noteStart();waitStart=false;}
+      if(lateInit&&!stopped()){await finishInit();return poll();}   // only after the start, so the crank dip is caught first
       expireStale();tick();
       if(stopped()){
         waitStart=true;
