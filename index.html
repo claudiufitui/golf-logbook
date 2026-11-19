@@ -188,7 +188,7 @@ input[type=number]{background:var(--panel2);border:1px solid var(--line);color:v
 </div>
 <div class="app">
   <div class="top">
-    <div class="brand">Golfozaur 3000<small>1.9 TDI BLS · v37</small></div>
+    <div class="brand">Golfozaur 3000<small>1.9 TDI BLS · v38</small></div>
     <div class="chips">
       <span class="chip" id="chipBt">Adapter off</span>
       <span class="chip" id="chipGps">GPS off</span>
@@ -649,7 +649,8 @@ function payload(r,mode,pid){
 }
 let lateInit=false;
 // The rest of the setup, once the ECU answers (after connecting with the ignition off).
-async function finishInit(){lateInit=false;const first=await cmd('0100',4000);log('0100 → '+clean(first));if(!payload(first,'41','00')){lateInit=true;return;}
+async function finishInit(){lateInit=false;const first=await cmd('0100',protoOk?4000:12000);log('0100 → '+clean(first));if(!payload(first,'41','00')){lateInit=true;return;}
+  {const dp=await cmd('ATDPN');const n=(dp||'').replace(/[^0-9A-C]/gi,'').slice(-1).toUpperCase();if(/^[1-9A-C]$/.test(n)){store('golf-proto',n);isCan=['6','7','8','9','A','B','C'].includes(n);protoOk=true;}}
   const t0=performance.now();const a=await cmd('010C1',1500);suffix=payload(a,'41','0C')?'1':'';store('golf-suffix',suffix);log('Single-answer mode '+(suffix?'on':'off')+' ('+Math.round(performance.now()-t0)+' ms)');
   await readSupported(first);await readVehicle();}
 async function initElm(){
@@ -658,20 +659,20 @@ async function initElm(){
     if(volts!=null&&volts<13.2){log('Peek: '+volts+' V, engine still off. Letting the adapter sleep.');chip('chipBt','Car parked');dropLink();return;}
     log('Peek: '+(volts??'?')+' V, engine running again.');parkedSince=null;
   }
-  const savedProto=recall('golf-proto');
+  let savedProto=recall('golf-proto');if(!/^[1-9A-C]$/i.test(savedProto||''))savedProto=null;
   for(const s of ['ATWS','ATE0','ATL0','ATS0','ATH0','ATAT2',savedProto?'ATSP'+savedProto:'ATSP0']){const r=await cmd(s,s==='ATWS'?3000:1500);log(s+' → '+clean(r));}
   let first=await cmd('0100',savedProto?4000:12000);log('0100 → '+clean(first));
   // Ignition still off (you connect before turning the key): don't go searching for a protocol, which takes
   // 15 s and would miss the start. Keep the known protocol, start watching the battery straight away,
   // and finish setting up once the engine answers.
-  if(!payload(first,'41','00')&&savedProto){
+  if(!payload(first,'41','00')){
     log('ECU silent: ignition off. Watching the battery until you start.');
-    isCan=['6','7','8','9','A','B','C'].includes(savedProto);suffix=recall('golf-suffix')??'';lateInit=true;
+    protoOk=!!savedProto;isCan=savedProto?['6','7','8','9','A','B','C'].includes(savedProto):true;suffix=recall('golf-suffix')??'';lateInit=true;
     $('btnDtc').disabled=false;startGps();keepAwake();if(!demo)poll();return;}
   lateInit=false;
   const dp=await cmd('ATDPN');log('ATDPN → '+clean(dp));
   const n=(dp||'').replace(/[^0-9A-C]/gi,'').slice(-1).toUpperCase();isCan=['6','7','8','9','A','B','C'].includes(n);
-  if(n&&payload(first,'41','00'))store('golf-proto',n);
+  if(/^[1-9A-C]$/.test(n)){store('golf-proto',n);protoOk=true;}
   // Telling the adapter to expect one answer saves it waiting for more: much faster.
   const t0=performance.now();const a=await cmd('010C1',1500);const fastOk=!!payload(a,'41','0C');
   suffix=fastOk?'1':'';store('golf-suffix',suffix);log('Single-answer mode '+(fastOk?'on':'off')+' ('+Math.round(performance.now()-t0)+' ms)');
@@ -726,7 +727,8 @@ async function readMonitors(){
 const fresh={};   // when each field last got a real answer
 function setLive(k,v){live[k]=v;fresh[k]=performance.now();}
 let suffix='';
-async function readPid(p){const r=await cmd('01'+p+suffix,1200);const b=payload(r,'41',p);if(!b||b.length<P[p].b)return false;setLive(P[p].k,P[p].f(b[0],b[1],b[2],b[3]));return true;}
+let protoOk=false;
+async function readPid(p){const r=await cmd('01'+p+suffix,protoOk?1200:9000);const b=payload(r,'41',p);if(!b||b.length<P[p].b)return false;setLive(P[p].k,P[p].f(b[0],b[1],b[2],b[3]));return true;}
 async function readVoltage(){const r=await cmd('ATRV',1000);const m=(r||'').match(/(\d+(\.\d+)?)\s*V/i);if(m){const v=parseFloat(m[1]);setLive('volt',v);return v;}return null;}
 // Battery: while the engine is off we read the voltage several times a second, so the dip when you
 // turn the key (glow plugs, then the starter) is caught. At start: resting voltage and lowest crank voltage.
@@ -734,9 +736,10 @@ let vbuf=[],pendingStart=null;
 function noteStart(){
   const now=Date.now();vbuf=vbuf.filter(x=>now-x.t<180000);
   if(vbuf.length<5){vbuf=[];return;}
-  const vs=vbuf.map(x=>x.v).sort((a,b)=>a-b);
-  const restV=vs[Math.floor(vs.length*0.9)];
+  const first=vbuf.slice(0,5).map(x=>x.v).sort((a,b)=>a-b),restV=first[2];
   const crank=vbuf.filter(x=>now-x.t<20000);const crankV=crank.length?Math.min(...crank.map(x=>x.v)):null;
+  // 19 Nov: the engine had been running for a minute before the app noticed, and it filed "14.3 V at rest". Never again:
+  if(now-vbuf[vbuf.length-1].t>5000||crankV==null||restV>13.4||crankV>=restV){log('Start not recorded (readings don\'t cover the start)');vbuf=[];return;}
   const keyOn=vbuf.find(x=>x.v<restV-0.3);
   pendingStart={at:now,restV,crankV,keyS:keyOn?Math.round((now-keyOn.t)/1000):null,n:vbuf.length};
   log(`Start: battery ${restV} V at rest, ${crankV??'?'} V lowest while cranking`);
@@ -1274,7 +1277,7 @@ async function vGroup(g){
   if(m[0]===0x7F)return {g,err:'refused '+H2(m[2]??0)};
   if(m[0]!==0x61||m[1]!==g)return {g,err:'odd reply '+m.map(H2).join(' ')};
   const raw=[];for(let i=2;i+2<m.length;i+=3)raw.push([m[i],m[i+1],m[i+2]]);
-  return {g,raw,dec:raw.map(vdec)};
+  return {g,raw,dec:raw.slice(0,4).map(vdec)};
 }
 function vShow(){
   const rows=Object.values(VW.results).filter(r=>r.raw).sort((a,b)=>a.g-b.g);
@@ -1315,9 +1318,9 @@ async function vRun(kind){
         const r=await vGroup(g);VW.results[g]=r;
         if(r.raw){good++;fails=0;vShow();}
         else if(r.err==='no answer'||VW.dead){fails++;
-          if(fails>=3){if(reopen++>=3){vstep('Channel kept dropping, stopping at group '+g,false);break;}
-            vstep('Channel dropped at group '+g+', reopening');await vClose();VW.dead=false;fails=0;
-            if(!(await vOpen())||!(await vreq([0x10,0x89]))){vstep('Could not reopen',false);break;}i-=3;}}
+          if(VW.dead||fails>=3){if(reopen++>=3){vstep('Channel kept dropping, stopping at group '+g,false);break;}
+            VW.lastFails=fails;vstep('Channel dropped at group '+g+', reopening');await vClose();VW.dead=false;fails=0;
+            if(!(await vOpen())||!(await vreq([0x10,0x89]))){vstep('Could not reopen',false);break;}i-=VW.lastFails||1;}}
         await vKeep();}
       vstep(`${good} of ${groups.length} groups answered${VW.retx?`, ${VW.retx} repeated packets (our acknowledgements were late)`:''}`,good>0);
       await vClose();
