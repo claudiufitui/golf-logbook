@@ -162,6 +162,12 @@ input[type=text],input[type=password]{background:var(--panel2);border:1px solid 
 select{background:var(--panel2);border:1px solid var(--line);color:var(--fg);border-radius:8px;padding:10px;font:500 14px var(--body);max-width:100%}
 input[type=number]{background:var(--panel2);border:1px solid var(--line);color:var(--fg);border-radius:8px;padding:10px;font:500 15px var(--mono);width:9em}
 @media (prefers-reduced-motion:reduce){.g .meter i{transition:none}}
+.orientpick{position:fixed;inset:0;z-index:50;display:grid;grid-template-columns:1fr;grid-auto-rows:1fr;gap:16px;padding:max(16px,env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) max(16px,env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left));background:var(--bg)}
+@media (orientation:landscape){.orientpick{grid-template-columns:1fr 1fr;grid-auto-rows:auto}}
+.orientpick .pick{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;border-radius:24px;border:1px solid var(--line);background:var(--panel);color:var(--fg);font:700 clamp(26px,7vw,44px)/1 var(--display);cursor:pointer}
+.orientpick .pick svg{width:clamp(72px,22vw,140px);height:auto}
+.orientpick .pick:active{background:var(--panel2)}
+.orientpick .pickx{position:absolute;top:max(10px,env(safe-area-inset-top));right:max(10px,env(safe-area-inset-right));width:44px;height:44px;border-radius:22px;border:1px solid var(--line);background:var(--panel);color:var(--muted);font-size:18px}
 </style>
 </head>
 <body>
@@ -172,9 +178,14 @@ input[type=number]{background:var(--panel2);border:1px solid var(--line);color:v
   <span class="mv"><b id="miniShift"></b><b id="miniRpm">–</b><small>rpm</small></span>
   <span class="mv"><b id="miniBoost">–</b><small>bar</small></span>
 </div>
+<div class="orientpick" id="orientPick" hidden>
+  <button class="pick" id="pickPortrait"><svg viewBox="0 0 64 64" aria-hidden="true"><rect x="17.0" y="8.0" width="30" height="48" rx="6" fill="none" stroke="currentColor" stroke-width="4"/><circle cx="32" cy="50.0" r="2.5" fill="currentColor"/></svg><span>Portrait</span></button>
+  <button class="pick" id="pickLandscape"><svg viewBox="0 0 64 64" aria-hidden="true"><rect x="8.0" y="17.0" width="48" height="30" rx="6" fill="none" stroke="currentColor" stroke-width="4"/><circle cx="50.0" cy="32" r="2.5" fill="currentColor"/></svg><span>Landscape</span></button>
+  <button class="pickx" id="pickCancel" aria-label="Cancel">✕</button>
+</div>
 <div class="app">
   <div class="top">
-    <div class="brand">Golfozaur 3000<small>1.9 TDI BLS · v34</small></div>
+    <div class="brand">Golfozaur 3000<small>1.9 TDI BLS · v35</small></div>
     <div class="chips">
       <span class="chip" id="chipBt">Adapter off</span>
       <span class="chip" id="chipGps">GPS off</span>
@@ -1332,8 +1343,13 @@ async function enterDrive(){driving=true;document.body.classList.add('drive-full
 async function exitDrive(){if(!driving)return;driving=false;document.body.classList.remove('drive-full');
   const cur=document.querySelector('nav button[aria-current="true"]')?.dataset.view||'home';
   document.querySelectorAll('.view').forEach(v=>v.hidden=v.id!=='view-'+cur);
+  try{screen.orientation.unlock();}catch(e){}
   try{if(document.fullscreenElement)await document.exitFullscreen();}catch(e){}renderHome();}
-$('btnDrive').onclick=enterDrive;$('btnExitDrive').onclick=exitDrive;
+$('btnDrive').onclick=()=>{$('orientPick').hidden=false;};
+$('pickPortrait').onclick=()=>pickDrive('portrait');$('pickLandscape').onclick=()=>pickDrive('landscape');$('pickCancel').onclick=()=>{$('orientPick').hidden=true;};
+// Auto-rotate can stay off: we go full screen and lock the screen the way you chose.
+async function pickDrive(o){$('orientPick').hidden=true;store('golf-orient',o);await enterDrive();
+  try{await screen.orientation.lock(o);}catch(e){log('Could not turn the screen: '+e.message);}}$('btnExitDrive').onclick=exitDrive;
 document.addEventListener('fullscreenchange',()=>{if(!document.fullscreenElement)exitDrive();});
 document.addEventListener('visibilitychange',()=>{if((connected||rec)&&document.visibilityState==='visible')keepAwake();});
 window.addEventListener('pagehide',()=>{if(rec&&!rec.demo)flushChunk(rec);});
