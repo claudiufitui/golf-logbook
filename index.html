@@ -174,7 +174,7 @@ input[type=number]{background:var(--panel2);border:1px solid var(--line);color:v
 </div>
 <div class="app">
   <div class="top">
-    <div class="brand">Golfozaur 3000<small>1.9 TDI BLS · v30</small></div>
+    <div class="brand">Golfozaur 3000<small>1.9 TDI BLS · v31</small></div>
     <div class="chips">
       <span class="chip" id="chipBt">Adapter off</span>
       <span class="chip" id="chipGps">GPS off</span>
@@ -1167,9 +1167,11 @@ async function vOpen(){
     {n:'CAN 500k, variable length (ATV1)',c:['ATSP6','ATCAF0','ATV1']},
     {n:'user protocol B (ATPB C0 01)',c:['ATPBC001','ATSPB','ATCAF0','ATV1']},
   ];
-  const P=['A00F8AFF4AFF','A00F8AFF32FF','A00FCAFF4AFF'];
+  // Each timing request is tried plain (the way the working Mk6 log did it) and with the response-count digit,
+  // and once with the receive filter open so we see everything the ECU sends (e.g. repeated setup replies).
+  const P=[{a:'A00F8AFF4AFF',k:0,f:1},{a:'A00F8AFF4AFF',k:1,f:1},{a:'A00F8AFF32FF',k:0,f:1},{a:'A00F8AFF4AFF',k:0,f:0}];
   const vo=VW.variant!=null?[V[VW.variant],...V.filter((_,i)=>i!==VW.variant)]:V;
-  const po=VW.param!=null?[VW.param,...P.filter(x=>x!==VW.param)]:P;
+  const po=VW.param!=null?[P[VW.param],...P.filter((_,i)=>i!==VW.param)]:P;
   for(const v of vo){
     vstep('Trying: '+v.n);
     for(const c of ['ATWS','ATE0','ATL0','ATS0','ATH1',...v.c,'ATCFC0','ATAL','ATAT1','ATST32'])await vat(c,c==='ATWS'?3000:1500);
@@ -1186,12 +1188,12 @@ async function vOpen(){
       if(!gatewayOk){gatewayOk=true;vstep('Gateway answered',true);}
       const rx=((ok.b[3]&7)<<8)|ok.b[2],tx=((ok.b[5]&7)<<8)|ok.b[4];VW.rx=rx;VW.tx=tx;
       await vat('ATSH'+tx.toString(16).padStart(3,'0').toUpperCase());
-      await vat('ATCRA'+rx.toString(16).padStart(3,'0').toUpperCase());
-      const {fr}=await vsend(pr,1);
+      if(pr.f)await vat('ATCRA'+rx.toString(16).padStart(3,'0').toUpperCase());else await vat('ATCRA');
+      const {fr}=await vsend(pr.a,pr.k);
       const p=fr.find(x=>x.id===rx&&x.b[0]===0xA1);
-      if(p){VW.variant=V.indexOf(v);VW.param=pr;VW.params=p.b;VW.seq=0;VW.rseq=null;
-        vstep(`Channel open (${v.n}, timing ${pr.slice(2)}): we send on ${tx.toString(16)}, the ECU answers on ${rx.toString(16)}. ECU timing ${p.b.map(H2).join(' ')}`,true);return true;}
-      vstep('ECU '+(fr.some(x=>x.b[0]===0xA8)?'closed the channel':'did not answer')+' on timing '+pr.slice(2),false);
+      if(p){VW.variant=V.indexOf(v);VW.param=P.indexOf(pr);if(!pr.f)await vat('ATCRA'+rx.toString(16).padStart(3,'0').toUpperCase());VW.params=p.b;VW.seq=0;VW.rseq=null;
+        vstep(`Channel open (${v.n}, ${pr.a}${pr.k?' +count':''}${pr.f?'':' unfiltered'}): we send on ${tx.toString(16)}, the ECU answers on ${rx.toString(16)}. ECU timing ${p.b.map(H2).join(' ')}`,true);return true;}
+      vstep('ECU '+(fr.some(x=>x.b[0]===0xA8)?'closed the channel':'did not answer')+' on '+pr.a+(pr.k?' +count':'')+(pr.f?'':' unfiltered')+(fr.length?' · saw '+fr.map(x=>x.id.toString(16)+':'+x.b.map(H2).join('')).join(' '):''),false);
       await new Promise(r=>setTimeout(r,300));
     }
   }
