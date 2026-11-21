@@ -287,7 +287,7 @@ body.drive-full .tile{min-height:0}
 </div>
 <div class="app">
   <header class="top">
-    <div class="brand"><span class="mark">Golfozaur <b>3000</b></span><small>1.9 TDI BLS · v45</small></div>
+    <div class="brand"><span class="mark">Golfozaur <b>3000</b></span><small>1.9 TDI BLS · v46</small></div>
     <div class="chips">
       <span class="chip rec" id="chipRec" hidden>REC</span>
       <span class="chip" id="chipSrc" hidden>VW</span>
@@ -898,7 +898,7 @@ async function poll(){
           lateProbe=performance.now();log(charging?'Battery shows the alternator charging: engine running, waking the ECU':'Checking whether the ECU answers yet');
           if(vwWait){const r=await vwStart();if(gen!==pollGen)return;
             if(r==='ok'){vwWait=false;lateProbe=0;return vwPoll();}
-            if(r==='fail'){log('VW mode: the engine computer would not open a channel. Standard OBD for this drive.');VWL.fellBack=true;vwWait=false;return initElm();}
+            if(r==='fail'){log('VW mode: the engine computer would not open a channel. Standard OBD for now.');VWL.fellBack=true;VWL.fbAt=performance.now();vwWait=false;return initElm();}
             lateProbe=performance.now();}
           else{await finishInit();if(!lateInit){lateProbe=0;return poll();}}
         }
@@ -917,6 +917,13 @@ async function poll(){
         tick();continue;}
     }
     offSince=null;
+    if(src==='vw'&&VWL.fellBack&&performance.now()-(VWL.fbAt||0)>180000&&(live.rpm??0)>300){
+      VWL.fbAt=performance.now();log('VW mode: trying again after falling back');
+      await cmd('ATPC',1500);obdLive=false;for(let i=0;i<6&&gen===pollGen;i++){await new Promise(r=>setTimeout(r,1000));expireStale();tick();}
+      if(gen!==pollGen)return;
+      const r=await vwStart();if(gen!==pollGen)return;
+      if(r==='ok'){VWL.fellBack=false;return vwPoll();}
+      log('VW mode: still refused. Back to standard OBD.');return initElm();}
     const t0=performance.now();
     if(step%2===0&&has('0C'))await readPid('0C');
     else{const k=(step>>1)%(others.length+1);
@@ -1443,18 +1450,35 @@ async function vOpen(maxTries=1e9){
   }
   vstep('Could not open a channel to the engine',false);return false;
 }
-async function vKeep(){if(performance.now()-(VW.lastTx||0)>400){const {fr}=await vsend('A3',1);return fr.some(x=>x.b[0]===0xA1);}return true;}
+async function vKeep(){if(performance.now()-(VW.lastTx||0)>400){const {fr}=await vx('A3',1);return fr.some(x=>x.b[0]===0xA1);}return true;}
 async function vClose(){try{await vsend('A8',1,800);}catch(e){}}
 // Send one KWP request (≤5 bytes) and collect the answer, acknowledging the ECU's packets.
 // Send one KWP request (≤5 bytes) and collect the answer.
 // 19 Nov: the ECU resent its packet three times and hung up because our ACK came 800 ms late: the adapter only hands
 // over what it heard after a quiet gap. So now we ask the ECU (block size 1) to wait for an ACK after every packet,
 // and tell the adapter exactly how many packets to wait for, so each ACK goes out within a few tens of ms.
+// Every send goes through here. 21 Nov, two drives: every ~3 s the engine computer asks "are you there?" (A3).
+// When that question arrived together with our acknowledgement, it was thrown away unread; after two unanswered
+// questions the ECU silently hung up. Once a data packet arrived with the question and was lost too, never acknowledged.
+// Now every reply is checked: each A3 gets our A1 at once, and whatever arrives with that answer is kept.
+async function vx(hex,count,timeout){
+  const res=await vsend(hex,count,timeout);let fr=res.fr;const out=[];
+  for(let guard=0;guard<4;guard++){
+    let tested=false;
+    for(const x of fr){if(x.id===VW.rx&&x.b[0]===0xA3){tested=true;continue;}
+      if(x.id===VW.rx&&x.b[0]===0xA8){VW.dead=true;VW.open=false;}
+      out.push(x);}
+    if(!tested)break;
+    vlog('(ECU checks we are there: answering)');
+    fr=(await vsend('A1'+(VW.mine||'0F8AFF4AFF'),0,400)).fr;
+  }
+  return {r:res.r,fr:out,ms:res.ms};
+}
 async function vreq(pl,nFrames){
   const hx=n=>n.toString(16).toUpperCase();
   const f=[0x10|VW.seq,0,pl.length,...pl];VW.seq=(VW.seq+1)&15;
   // Block size 15: the ECU sends the whole answer in one burst; tell the adapter how many packets to wait for.
-  let {fr}=await vsend(f.map(H2).join(''),VW.bs>1&&nFrames?Math.min(15,1+nFrames):2,1500);
+  let {fr}=await vx(f.map(H2).join(''),VW.bs>1&&nFrames?Math.min(15,1+nFrames):2,1500);
   let data=[],need=null,empty=0;
   for(let round=0;round<60;round++){
     let ack=null,done=false;
@@ -1471,12 +1495,12 @@ async function vreq(pl,nFrames){
     if(done&&need!=null&&data.length-2>=need){
       const msg=data.slice(2,2+need);data=[];need=null;
       if(msg[0]===0x7F&&msg[2]===0x78){   // "busy, answer coming": ACK it and wait longer for the real answer
-        vlog('(ECU busy, waiting)');await vat('ATSTFF');({fr}=await vsend(ack!=null?'B'+hx(ack):'A3',1,4000));await vat('ATST19');continue;}
-      if(ack!=null)await vsend('B'+hx(ack),0,600);
+        vlog('(ECU busy, waiting)');await vat('ATSTFF');({fr}=await vx(ack!=null?'B'+hx(ack):'A3',1,4000));await vat('ATST19');continue;}
+      if(ack!=null)await vx('B'+hx(ack),0,600);
       return msg;}
-    if(ack!=null){({fr}=await vsend('B'+hx(ack),1,1500));continue;}   // ACK, and wait for exactly the next packet
+    if(ack!=null){({fr}=await vx('B'+hx(ack),1,1500));continue;}   // ACK, and wait for exactly the next packet
     if(!fr.length&&++empty>2)return null;
-    ({fr}=await vsend('A3',2,1500));   // nothing to ACK yet: keep the channel alive and listen
+    ({fr}=await vx('A3',2,1500));   // nothing to ACK yet: keep the channel alive and listen
   }
   return null;
 }
@@ -1549,7 +1573,7 @@ async function vwLost(gen){
   }
   if(gen!==pollGen)return false;
   log('VW mode: could not get the channel back. Standard OBD for the rest of this drive.');
-  VWL.fellBack=true;initElm();return false;
+  VWL.fellBack=true;VWL.fbAt=performance.now();initElm();return false;
 }
 async function vwPoll(){
   const gen=++pollGen;VWL.live=true;VWL.used=true;obdLive=false;
