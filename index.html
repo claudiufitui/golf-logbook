@@ -188,7 +188,7 @@ input[type=number]{background:var(--panel2);border:1px solid var(--line);color:v
 </div>
 <div class="app">
   <div class="top">
-    <div class="brand">Golfozaur 3000<small>1.9 TDI BLS · v42</small></div>
+    <div class="brand">Golfozaur 3000<small>1.9 TDI BLS · v43</small></div>
     <div class="chips">
       <span class="chip" id="chipBt">Adapter off</span>
       <span class="chip" id="chipGps">GPS off</span>
@@ -444,7 +444,7 @@ function store(k,v){try{localStorage.setItem(k,v);}catch(e){}}
 function recall(k){try{return localStorage.getItem(k);}catch(e){return null;}}
 // =============== log ===============
 const logLines=[];
-function log(s){logLines.push(new Date().toTimeString().slice(0,8)+'  '+s);if(logLines.length>500)logLines.shift();const el=$('log');el.textContent=logLines.join('\n');el.scrollTop=el.scrollHeight;}
+function log(s){logLines.push(new Date().toTimeString().slice(0,8)+'  '+s);if(logLines.length>3000)logLines.shift();const el=$('log');el.textContent=logLines.slice(-500).join('\n');el.scrollTop=el.scrollHeight;}
 $('btnCopyLog').onclick=async()=>{try{await navigator.clipboard.writeText(logLines.join('\n')+(window.__vwlog?.length?'\n\n--- VW lab ---\n'+window.__vwlog.join('\n'):''));$('btnCopyLog').textContent='Copied';setTimeout(()=>$('btnCopyLog').textContent='Copy log',1500);}catch(e){}};
 function chip(id,text,cls){const c=$(id);c.textContent=text;c.className='chip'+(cls?' '+cls:'');}
 
@@ -925,7 +925,7 @@ function flushChunk(t){t=t||rec;if(!t)return Promise.resolve();if(t.demo){t.buf=
 const KEEP=['starts','minVolt','lugS','km','fuel','idleS','hotS','engineS','stops','maxRpm','maxBoost','maxSpeed','maxCoolant','warm80','coolStart','chunk','n','spark','start','id'];
 function summary(t){return {id:t.id,start:t.start,end:t.last||Date.now(),durationS:Math.round(((t.last||Date.now())-t.start)/1000),engineS:Math.round(t.engineS||0),stops:t.stops||0,km:+t.km.toFixed(2),fuelL:+t.fuel.toFixed(3),avgL100:t.km>0.5?+(t.fuel/t.km*100).toFixed(2):null,
   samples:t.n,idleS:Math.round(t.idleS),hotS:Math.round(t.hotS),maxRpm:Math.round(t.maxRpm),maxBoost:+t.maxBoost.toFixed(2),maxSpeed:Math.round(t.maxSpeed),coolantStart:t.coolStart,maxCoolant:t.maxCoolant,warmTo80S:t.warm80,
-  outsideC:weather.t,minVolt:t.minVolt??null,starts:t.starts||[],restV:t.starts?.[0]?.restV??null,crankV:t.starts?.[0]?.crankV??null,lugS:Math.round(t.lugS||0),calib,src:VWL.used?'vw':'obd',fields:['t'].concat(FIELDS,EXTRA),supported:[...supported],spark:t.spark,demo:t.demo,state:Object.fromEntries(KEEP.map(k=>[k,t[k]]))};}
+  outsideC:weather.t,minVolt:t.minVolt??null,starts:t.starts||[],restV:t.starts?.[0]?.restV??null,crankV:t.starts?.[0]?.crankV??null,lugS:Math.round(t.lugS||0),calib:VWL.used?1:calib,src:VWL.used?'vw':'obd',fields:['t'].concat(FIELDS,EXTRA),supported:[...supported],spark:t.spark,demo:t.demo,state:Object.fromEntries(KEEP.map(k=>[k,t[k]]))};}
 const demoTrips=[];
 async function closeTrip(t){
   if(!t)return;await flushChunk(t);const s=summary(t);s.open=false;
@@ -951,6 +951,8 @@ async function syncTrip(t){
   const dir='trips/'+t.id.slice(0,4)+'/'+t.id.slice(4,6);
   await ghPut(`${dir}/${t.id}.csv`,csv,`Trip ${t.id}: ${t.km} km`);
   await ghPut(`${dir}/${t.id}.json`,JSON.stringify(meta,null,1),`Trip ${t.id} summary`);
+  // The app's log goes with every recent trip, so Claude can see what happened without anyone pressing a button.
+  if(Date.now()-(t.end||t.last||0)<3*3600e3){try{await ghPut(`${dir}/${t.id}.log.txt`,logLines.join('\n')+(VW.log.length?'\n\n--- VW ---\n'+VW.log.slice(-4000).join('\n'):''),`Trip ${t.id} log`);}catch(e){log('Log upload: '+e.message);}}
   t.synced=true;await put('trips',t);
 }
 async function syncPending(force){
