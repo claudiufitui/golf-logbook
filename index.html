@@ -11,7 +11,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap">
 <style>
-/* One dark cockpit look on purpose: this is used in a car, often at night. */
+/* One dark cockpit look on purpose: this is used in a car, often at night.
+   v44 redesign: the fullscreen cockpit keeps its exact look; everything around it is new. */
 :root{
   color-scheme:dark;
   --bg:#0b0e11; --panel:#12171c; --panel2:#171d23; --line:#242d35; --fg:#e8edf0; --muted:#83919c; --dim:#4a5661;
@@ -19,37 +20,183 @@
   --display:"Barlow Semi Condensed","Arial Narrow",system-ui,sans-serif;
   --body:"Inter",system-ui,-apple-system,"Segoe UI",sans-serif;
   --mono:"JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;
+  /* redesign tokens (not used by the cockpit) */
+  --card:#11161b; --card-hi:#161c22; --hair:#1e262d; --soft:#a9b5be;
+  --accent-soft:color-mix(in srgb,var(--accent) 14%,transparent);
+  --ok-soft:color-mix(in srgb,var(--ok) 14%,transparent);
+  --warn-soft:color-mix(in srgb,var(--warn) 16%,transparent);
+  --bad-soft:color-mix(in srgb,var(--bad) 16%,transparent);
+  --r:18px; --gut:max(16px,env(safe-area-inset-left,0px));
+  --tabh:62px;
 }
 *{box-sizing:border-box}
 [hidden]{display:none!important}
-html,body{margin:0;height:100%}
-body{background:var(--bg);color:var(--fg);font-family:var(--body);font-size:15px;line-height:1.45;-webkit-tap-highlight-color:transparent}
-.app{min-height:100%;display:flex;flex-direction:column;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
-.top{display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-areas:'brand nav' 'chips chips';align-items:center;gap:8px 10px;padding-block:10px;padding-left:max(14px,env(safe-area-inset-left,0px));padding-right:max(14px,env(safe-area-inset-right,0px));border-bottom:1px solid var(--line)}
-.top .brand{grid-area:brand;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.top nav{grid-area:nav}.top .chips{grid-area:chips}
-@media (min-width:760px){.top{grid-template-columns:auto minmax(0,1fr) auto;grid-template-areas:'brand chips nav'}}
-.brand{font-family:var(--display);font-weight:700;font-size:22px;letter-spacing:.02em}
-.brand small{font-family:var(--mono);font-weight:400;font-size:11px;color:var(--muted);margin-left:8px;letter-spacing:0}
-.chips{display:flex;gap:6px;flex-wrap:nowrap;overflow:hidden;min-width:0}
-.chips .chip{max-width:16em;overflow:hidden;text-overflow:ellipsis;flex:0 0 auto}
-.chip{font-family:var(--mono);font-size:11px;padding:3px 8px;border-radius:999px;border:1px solid var(--line);color:var(--muted);white-space:nowrap}
-.chip.ok{color:var(--ok);border-color:currentColor}.chip.warn{color:var(--warn);border-color:currentColor}.chip.bad{color:var(--bad);border-color:currentColor}.chip.rec{color:#fff;background:var(--bad);border-color:var(--bad)}
-nav{display:flex;gap:4px}
-nav button{background:none;border:0;color:var(--muted);font:600 14px var(--body);padding:8px 12px;border-radius:8px;min-height:40px;cursor:pointer}
-nav button[aria-current="true"]{color:var(--fg);background:var(--panel2)}
-main{flex:1;padding-block:12px 28px;padding-left:max(14px,env(safe-area-inset-left,0px));padding-right:max(14px,env(safe-area-inset-right,0px))}
+html,body{margin:0;min-height:100%}
+body{background:var(--bg);color:var(--fg);font-family:var(--body);font-size:15px;line-height:1.45;-webkit-tap-highlight-color:transparent;-webkit-font-smoothing:antialiased}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:30;background:var(--bg)}
+.app{min-height:100vh;display:flex;flex-direction:column;padding-top:env(safe-area-inset-top,0px)}
+
+/* ---- header ---- */
+.top{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding-block:14px 10px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));max-width:760px;width:100%;margin:0 auto}
+.brand{display:flex;align-items:baseline;gap:8px;min-width:0;white-space:nowrap}
+.brand .mark{font-family:var(--display);font-weight:700;font-size:23px;letter-spacing:.06em;text-transform:uppercase;line-height:1}
+.brand .mark b{color:var(--accent);font-weight:700}
+.brand small{font-family:var(--mono);font-size:10.5px;color:var(--dim);letter-spacing:.02em}
+.chips{display:flex;gap:6px;flex-wrap:wrap;min-width:0}
+.chip{font-family:var(--mono);font-size:11px;line-height:1;padding:6px 9px;border-radius:999px;background:var(--panel2);color:var(--muted);white-space:nowrap;display:inline-flex;align-items:center;gap:6px;border:0}
+.chip::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--dim);flex:none}
+.chip.ok{color:var(--fg)}.chip.ok::before{background:var(--ok);box-shadow:0 0 6px var(--ok)}
+.chip.warn{color:var(--warn)}.chip.warn::before{background:var(--warn)}
+.chip.bad{color:var(--bad)}.chip.bad::before{background:var(--bad)}
+.chip.rec{color:#fff;background:var(--bad)}.chip.rec::before{background:#fff;animation:blink 1.4s ease-in-out infinite}
+.chip.plain::before{display:none}
+.chip.vw{color:var(--fg);background:var(--accent-soft)}.chip.vw::before{background:var(--accent)}
+@keyframes blink{50%{opacity:.25}}
+@media (prefers-reduced-motion:reduce){.chip.rec::before{animation:none}}
+
+/* ---- layout ---- */
+main{flex:1;width:100%;max-width:760px;margin:0 auto;padding-block:4px calc(var(--tabh) + 28px + env(safe-area-inset-bottom,0px));padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
 .view[hidden]{display:none!important}
-button.btn{font:600 15px var(--body);padding:11px 16px;border-radius:10px;border:1px solid var(--line);background:var(--panel2);color:var(--fg);cursor:pointer;min-height:46px}
+.view{display:flex;flex-direction:column;gap:14px}
+.pagehead{display:flex;align-items:flex-end;justify-content:space-between;gap:10px;margin:6px 2px 0}
+.pagehead h1{font-family:var(--display);font-weight:700;font-size:30px;letter-spacing:.01em;margin:0;line-height:1}
+.pagehead p{margin:0;color:var(--muted);font-size:13px}
+
+/* ---- cards ---- */
+.panel{background:var(--card);border:1px solid var(--hair);border-radius:var(--r);padding:16px}
+.sec-h{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px;min-height:28px}
+h2{font-family:var(--display);font-weight:600;font-size:13px;text-transform:uppercase;letter-spacing:.16em;color:var(--soft);margin:0;display:flex;align-items:center;gap:8px}
+h2::before{content:"";width:3px;height:12px;border-radius:2px;background:var(--accent)}
+.muted{color:var(--muted)}.small{font-size:13px}.mono{font-family:var(--mono)}
+p.small{margin:0 0 10px}
+.notice{background:var(--card);border:1px solid var(--hair);border-left:3px solid var(--warn);padding:12px 14px;border-radius:12px;font-size:14px}
+.notice.bad{border-left-color:var(--bad)}
+
+/* ---- buttons & fields ---- */
+button.btn{font:600 14.5px var(--body);padding:11px 16px;border-radius:12px;border:1px solid var(--line);background:var(--panel2);color:var(--fg);cursor:pointer;min-height:46px;display:inline-flex;align-items:center;justify-content:center;gap:8px;transition:background .15s,border-color .15s}
+button.btn:active{background:var(--line)}
 button.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-fg)}
+button.btn.ghost{background:none}
+button.btn.sm{min-height:36px;padding:7px 12px;font-size:13px;border-radius:10px}
 button.btn.recording{background:var(--bad);border-color:var(--bad);color:#fff}
 button.btn:disabled{opacity:.4;cursor:not-allowed}
-button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+button.btn svg{width:18px;height:18px;flex:none}
+button:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-.notice{border:1px solid var(--line);border-left:3px solid var(--warn);background:var(--panel);padding:10px 12px;border-radius:8px;font-size:14px;margin-bottom:12px}
-.notice.bad{border-left-color:var(--bad)}
-h2{font-family:var(--display);font-weight:600;font-size:14px;text-transform:uppercase;letter-spacing:.14em;color:var(--muted);margin:0 0 10px}
-.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px}
-.muted{color:var(--muted)}.small{font-size:13px}.mono{font-family:var(--mono)}
+label.field{display:flex;flex-direction:column;gap:6px;font-size:12px;font-weight:600;letter-spacing:.04em;color:var(--muted);min-width:0;flex:1 1 200px}
+input[type=text],input[type=password],input[type=number],select{background:var(--bg);border:1px solid var(--line);color:var(--fg);border-radius:10px;padding:11px 12px;font:500 15px var(--body);width:100%;min-width:0;min-height:46px}
+input[type=text],input[type=password]{font-family:var(--mono);font-size:14px}
+input[type=number]{font-family:var(--mono)}
+input:focus,select:focus{outline:none;border-color:var(--accent)}
+label.check{display:flex;gap:10px;align-items:center;font-size:14px;color:var(--fg);min-height:46px}
+label.check input{width:20px;height:20px;accent-color:var(--accent)}
+
+/* ---- home: status card ---- */
+.hero{display:flex;flex-direction:column;gap:16px;background:radial-gradient(120% 90% at 100% 0%,color-mix(in srgb,var(--accent) 9%,transparent),transparent 60%),var(--card)}
+.hero-top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.hero-top>div:first-child{min-width:0;flex:1}
+.hero-state{display:flex;align-items:center;gap:8px;font:600 11px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
+.hero-state i{width:8px;height:8px;border-radius:50%;background:var(--dim)}
+.hero[data-state=run] .hero-state i{background:var(--ok);box-shadow:0 0 8px var(--ok)}
+.hero[data-state=conn] .hero-state i{background:var(--cool)}
+.hero[data-state=look] .hero-state i{background:var(--warn);animation:blink 1.4s infinite}
+.hero-title{font-family:var(--display);font-weight:700;font-size:34px;line-height:1;letter-spacing:.005em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#hSub{line-height:1.4;min-height:2.8em;margin-top:6px;font-size:13.5px}
+.livebar{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:var(--hair);border-radius:14px;overflow:hidden;border:1px solid var(--hair);transition:opacity .3s}
+.livebar.off{opacity:.45}
+.livebar>div{background:var(--bg);padding:12px 10px 10px;display:flex;flex-direction:column;min-width:0}
+.k{font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.12em;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.livebar .v{font-family:var(--display);font-weight:700;font-size:30px;line-height:1.05;font-variant-numeric:tabular-nums;white-space:nowrap;margin-top:4px}
+.u{font-family:var(--mono);font-size:10.5px;color:var(--dim);white-space:nowrap}
+.hero-actions{display:flex;gap:8px;flex-wrap:wrap}
+.btn.drive{flex:1 1 200px;min-height:56px;font-size:17px;background:var(--accent);border-color:var(--accent);color:var(--accent-fg)}
+.btn.drive svg{width:22px;height:22px}
+.hero-actions .btn:not(.drive){flex:1 1 140px}
+#btnRec:disabled{display:none}
+#tripInfo:empty{display:none}
+
+/* ---- stats ---- */
+.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px 10px}
+.stats>div{display:flex;flex-direction:column;min-width:0;gap:2px}
+.stats .v{font-family:var(--display);font-weight:600;font-size:26px;line-height:1.05;font-variant-numeric:tabular-nums;white-space:nowrap}
+@media (max-width:460px){.stats{grid-template-columns:repeat(2,minmax(0,1fr))}.livebar{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+/* ---- health ---- */
+.health{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
+.health li{display:grid;grid-template-columns:22px minmax(0,1fr);gap:2px 10px;align-items:start;padding:11px 0;border-top:1px solid var(--hair)}
+.health li:first-child{border-top:0;padding-top:2px}
+.health .dot{width:22px;height:22px;border-radius:50%;background:var(--panel2);position:relative;margin-top:-1px}
+.health .dot::after{content:"";position:absolute;inset:7px;border-radius:50%;background:var(--dim)}
+.health .dot.ok{background:var(--ok-soft)}.health .dot.ok::after{background:var(--ok)}
+.health .dot.warn{background:var(--warn-soft)}.health .dot.warn::after{background:var(--warn)}
+.health .dot.bad{background:var(--bad-soft)}.health .dot.bad::after{background:var(--bad)}
+.health b{font-weight:600;font-size:14.5px}
+.health .d{grid-column:2;font-size:13px;color:var(--muted);line-height:1.45}
+
+/* ---- fuel ---- */
+.fillform{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;margin:4px 0 14px;padding:14px;border-radius:14px;background:var(--bg);border:1px solid var(--hair)}
+.fillform label.field{flex:1 1 120px}
+.fill{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 12px;padding:12px 0;border-top:1px solid var(--hair);align-items:center}
+.fill .meta{font-family:var(--mono);font-size:12px;color:var(--muted)}
+.fill .res{text-align:right;font-family:var(--display);font-weight:700;font-size:24px;white-space:nowrap}
+.fill .res .meta{font-size:11px}
+.fill button{grid-column:2;justify-self:end}
+#fuelStats:not(:empty){margin-bottom:6px}
+.callout{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:12px 14px;border-radius:12px;background:var(--accent-soft);font-size:13.5px;margin:4px 0 8px}
+
+/* ---- trips ---- */
+.day{font-family:var(--display);font-weight:600;font-size:13px;text-transform:uppercase;letter-spacing:.16em;color:var(--muted);margin:8px 4px -4px}
+.trip{background:var(--card);border:1px solid var(--hair);border-radius:var(--r);padding:14px 16px 12px;display:flex;flex-direction:column;gap:10px}
+.trip.flat{background:none;border:0;padding:0}
+.t-top{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.t-when{font-family:var(--mono);font-size:12.5px;color:var(--soft);white-space:nowrap}
+.t-when b{color:var(--fg);font-weight:600}
+.t-tags{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.t-head{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.t-head>div{display:flex;flex-direction:column;min-width:0}
+.t-head .v{font-family:var(--display);font-weight:700;font-size:28px;line-height:1;font-variant-numeric:tabular-nums;white-space:nowrap}
+.t-head .v small{font-size:13px;font-weight:600;color:var(--muted);margin-left:3px}
+.t-meta{display:flex;flex-wrap:wrap;gap:6px}
+.t-meta span{font-family:var(--mono);font-size:11.5px;color:var(--muted);background:var(--bg);border:1px solid var(--hair);padding:4px 8px;border-radius:8px;white-space:nowrap}
+.t-meta span.warn{color:var(--warn)}
+.t-foot{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+.legend{display:flex;gap:12px;font-family:var(--mono);font-size:11px;color:var(--muted)}
+.legend i{display:inline-block;width:10px;height:3px;border-radius:2px;margin-right:5px;vertical-align:middle}
+.spark{width:100%;height:56px;display:block;border-radius:8px;background:var(--bg)}
+.empty{text-align:center;padding:28px 12px;color:var(--muted);font-size:14px}
+.empty svg{width:44px;height:44px;color:var(--dim);display:block;margin:0 auto 10px}
+
+/* ---- car tab ---- */
+.kv{display:grid;grid-template-columns:auto minmax(0,1fr);gap:8px 16px;font-size:14px;margin:0}
+.kv dt{color:var(--muted)}.kv dd{margin:0;font-family:var(--mono);font-size:13px;word-break:break-word}
+details.panel{padding:0}
+details.panel>summary{list-style:none;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:16px;cursor:pointer;min-height:56px}
+details.panel>summary::-webkit-details-marker{display:none}
+details.panel>summary::after{content:"";width:9px;height:9px;border-right:2px solid var(--muted);border-bottom:2px solid var(--muted);transform:rotate(45deg) translateY(-3px);transition:transform .2s;flex:none}
+details.panel[open]>summary::after{transform:rotate(-135deg) translate(-2px,0)}
+details.panel>.body{padding:0 16px 16px}
+.sum-note{font-size:12px;color:var(--muted);font-weight:400;margin-left:auto;text-align:right}
+.vwtab{overflow-x:auto;margin-top:10px;border:1px solid var(--hair);border-radius:10px}.vwtab table{border-collapse:collapse;font-family:var(--mono);font-size:12px;white-space:nowrap}.vwtab td,.vwtab th{padding:6px 10px;border-bottom:1px solid var(--hair);text-align:left}.vwtab th{color:var(--muted);font-weight:600}
+.pids{display:flex;flex-wrap:wrap;gap:6px}
+.pids .chip::before{display:none}
+.log{font-family:var(--mono);font-size:11px;line-height:1.5;background:var(--bg);border:1px solid var(--hair);border-radius:10px;padding:10px;max-height:320px;overflow:auto;white-space:pre-wrap;word-break:break-all;margin:0}
+.log:empty{display:none}
+.dtc{font-family:var(--mono);font-weight:600;color:var(--warn)}
+.stack{display:flex;flex-direction:column;gap:12px}
+.stack>label.field{flex:none}
+
+/* ---- tab bar ---- */
+.tabbar{position:fixed;left:0;right:0;bottom:0;z-index:20;display:flex;justify-content:center;background:color-mix(in srgb,var(--bg) 86%,transparent);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);border-top:1px solid var(--hair);padding-bottom:env(safe-area-inset-bottom,0px);padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px)}
+.tabbar nav{display:grid;grid-template-columns:repeat(3,1fr);width:100%;max-width:520px}
+.tabbar button{position:relative;background:none;border:0;color:var(--muted);font:600 11.5px var(--body);letter-spacing:.04em;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;height:var(--tabh);cursor:pointer}
+.tabbar button svg{width:24px;height:24px}
+.tabbar button[aria-current="true"]{color:var(--fg)}
+.tabbar button[aria-current="true"] svg{color:var(--accent)}
+.tabbar button[aria-current="true"]::before{content:"";position:absolute;top:0;left:50%;width:28px;height:3px;margin-left:-14px;border-radius:0 0 3px 3px;background:var(--accent)}
+body.drive-full .tabbar{display:none!important}
+
+/* ---- fullscreen: which data source is live (6th value in the strip) ---- */
+.strip .v.vw{color:var(--accent)}.strip .v.obd{color:var(--cool)}
 
 /* ---- Drive cockpit: four big numbers, colour = what to do ---- */
 .cockpit{display:grid;grid-template-columns:1fr 1fr;gap:10px}
@@ -84,7 +231,7 @@ h2{font-family:var(--display);font-weight:600;font-size:14px;text-transform:uppe
 .ring svg{width:min(70%,110px);height:auto;aspect-ratio:1}
 .ring .t{font-family:var(--display);font-weight:700;font-size:clamp(36px,9vw,64px);color:var(--cool);line-height:1}
 .ring .lab{display:block;margin-top:4px}
-.strip{grid-column:1/-1;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:10px 12px}
+.strip{grid-column:1/-1;display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:10px 12px}
 .strip div{display:flex;flex-direction:column;min-width:0}
 .strip .k{font-size:11.5px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .strip .v{font-family:var(--display);font-weight:600;font-size:26px;line-height:1.1;font-variant-numeric:tabular-nums;white-space:nowrap}
@@ -94,12 +241,13 @@ h2{font-family:var(--display);font-weight:600;font-size:14px;text-transform:uppe
 @media (max-width:420px){.strip{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media (orientation:landscape) and (max-height:600px){.tile{min-height:calc((100dvh - 150px)/2)}.tile .num{font-size:min(19vh,130px)}}
 body.drive-full .top{display:none!important}
+body.drive-full main{max-width:none}
 body.drive-full main{padding-block:8px;padding-left:max(10px,env(safe-area-inset-left,0px),env(safe-area-inset-right,0px));padding-right:max(10px,env(safe-area-inset-left,0px),env(safe-area-inset-right,0px));height:100dvh}
 body.drive-full .cockpit{height:calc(100dvh - 16px - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px));grid-template-rows:1fr 1fr auto}
 body.drive-full .tile{min-height:0}
 @media (orientation:landscape){
   body.drive-full .cockpit{grid-template-columns:repeat(4,minmax(0,1fr));grid-template-rows:1fr auto}
-  body.drive-full .strip .v{font-size:min(4.2vw,8vh)}
+  body.drive-full .strip .v{font-size:min(3.6vw,8vh)}
 }
 
 /* ---- Mini view: split screen next to navigation ---- */
@@ -115,56 +263,7 @@ body.drive-full .tile{min-height:0}
   #mini .mv.hot b{color:var(--bad)}#mini .mv.cold b{color:var(--cool)}
 }
 
-/* ---- Home ---- */
-.hero{display:flex;flex-direction:column;gap:12px}
-.hero-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
-.hero-title{font-family:var(--display);font-weight:700;font-size:28px;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.hero-top>div:first-child{min-width:0;flex:1}
-#hSub{line-height:1.4;min-height:2.8em}
-.livebar.off{opacity:.4}
-.livebar{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;background:var(--panel2);border-radius:10px;padding:10px 12px}
-.livebar div,.stats div{display:flex;flex-direction:column;min-width:0}
-.livebar .k,.stats .k{font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted)}
-.livebar .v,.stats .v{font-family:var(--display);font-weight:600;font-size:24px;font-variant-numeric:tabular-nums;white-space:nowrap}
-.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
-.stats .u{font-family:var(--mono);font-size:10.5px;color:var(--dim)}
-.btn.drive{background:var(--accent);border-color:var(--accent);color:var(--accent-fg);font-size:17px;flex:1 1 180px;min-height:54px}
-.hero-actions{gap:8px}
-.health{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px}
-.health li{display:grid;grid-template-columns:12px minmax(0,1fr);gap:4px 10px;align-items:baseline}
-.health .dot{width:10px;height:10px;border-radius:50%;background:var(--dim);transform:translateY(1px)}
-.health .dot.ok{background:var(--ok)}.health .dot.warn{background:var(--warn)}.health .dot.bad{background:var(--bad)}
-.health b{font-weight:600}.health .d{grid-column:2;font-size:13px;color:var(--muted)}
-.fillform{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin-top:12px}
-.fillform input[type=number]{width:8em}
-label.check{display:flex;gap:8px;align-items:center;font-size:14px;color:var(--fg);min-height:44px}
-label.check input{width:20px;height:20px;accent-color:var(--accent)}
-.fill{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 10px;padding:10px 0;border-top:1px solid var(--line)}
-.fill .meta{font-family:var(--mono);font-size:12px;color:var(--muted)}
-.fill .res{text-align:right;font-family:var(--display);font-weight:600;font-size:20px}
-.fill button{grid-column:2;justify-self:end;padding:4px 10px;min-height:32px;font-size:12px}
 .exitdrive{position:fixed;top:calc(6px + env(safe-area-inset-top,0px));right:calc(6px + env(safe-area-inset-right,0px));z-index:5;width:36px;height:36px;border-radius:50%;border:1px solid var(--line);background:color-mix(in srgb,var(--panel) 80%,transparent);color:var(--muted);font-size:15px;opacity:.55;cursor:pointer}
-@media (max-width:440px){.stats,.livebar{grid-template-columns:repeat(2,minmax(0,1fr))}}
-
-/* ---- Trips ---- */
-.trip{border-top:1px solid var(--line);padding:12px 0;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 10px}
-.trip:first-child{border-top:0}
-.trip .when{font-weight:600}
-.trip .meta{color:var(--muted);font-family:var(--mono);font-size:12px;font-variant-numeric:tabular-nums}
-.trip .acts{grid-row:span 2;display:flex;gap:6px;align-items:center}
-.trip .acts button{padding:7px 10px;min-height:36px;font-size:13px}
-.spark{grid-column:1/-1;width:100%;height:56px;display:block}
-.kv{display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 14px;font-size:14px}
-.kv dt{color:var(--muted)}.kv dd{margin:0;font-family:var(--mono);word-break:break-all}
-.vwtab{overflow-x:auto;margin-top:10px}.vwtab table{border-collapse:collapse;font-family:var(--mono);font-size:12px;white-space:nowrap}.vwtab td,.vwtab th{padding:4px 8px;border-bottom:1px solid var(--line);text-align:left}.vwtab th{color:var(--muted);font-weight:600}
-.pids{display:flex;flex-wrap:wrap;gap:6px}
-.log{font-family:var(--mono);font-size:11px;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px;max-height:300px;overflow:auto;white-space:pre-wrap;word-break:break-all}
-.dtc{font-family:var(--mono);font-weight:600;color:var(--warn)}
-label.field{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted)}
-input[type=text],input[type=password]{background:var(--panel2);border:1px solid var(--line);color:var(--fg);border-radius:8px;padding:10px;font:500 14px var(--mono);width:16em;max-width:100%}
-select{background:var(--panel2);border:1px solid var(--line);color:var(--fg);border-radius:8px;padding:10px;font:500 14px var(--body);max-width:100%}
-input[type=number]{background:var(--panel2);border:1px solid var(--line);color:var(--fg);border-radius:8px;padding:10px;font:500 15px var(--mono);width:9em}
-@media (prefers-reduced-motion:reduce){.g .meter i{transition:none}}
 .orientpick{position:fixed;inset:0;z-index:50;display:grid;grid-template-columns:1fr;grid-auto-rows:1fr;gap:16px;padding:max(16px,env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) max(16px,env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left));background:var(--bg)}
 @media (orientation:landscape){.orientpick{grid-template-columns:1fr 1fr;grid-auto-rows:auto}}
 .orientpick .pick{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;border-radius:24px;border:1px solid var(--line);background:var(--panel);color:var(--fg);font:700 clamp(26px,7vw,44px)/1 var(--display);cursor:pointer}
@@ -187,73 +286,70 @@ input[type=number]{background:var(--panel2);border:1px solid var(--line);color:v
   <button class="pickx" id="pickCancel" aria-label="Cancel">✕</button>
 </div>
 <div class="app">
-  <div class="top">
-    <div class="brand">Golfozaur 3000<small>1.9 TDI BLS · v43</small></div>
+  <header class="top">
+    <div class="brand"><span class="mark">Golfozaur <b>3000</b></span><small>1.9 TDI BLS · v44</small></div>
     <div class="chips">
+      <span class="chip rec" id="chipRec" hidden>REC</span>
+      <span class="chip" id="chipSrc" hidden>VW</span>
       <span class="chip" id="chipBt">Adapter off</span>
       <span class="chip" id="chipGps">GPS off</span>
-      <span class="chip" id="chipHz" hidden>0 Hz</span>
-      <span class="chip rec" id="chipRec" hidden>REC</span>
+      <span class="chip plain" id="chipHz" hidden>0 Hz</span>
     </div>
-    <nav>
-      <button data-view="home" aria-current="true">Home</button>
-      <button data-view="trips">Trips</button>
-      <button data-view="car">Car</button>
-    </nav>
-  </div>
+  </header>
 
   <main>
     <!-- HOME -->
     <section class="view" id="view-home">
       <div class="notice bad" id="btNotice" hidden></div>
-      <div class="panel hero">
+      <div class="panel hero" id="hero" data-state="off">
         <div class="hero-top">
-          <div><div class="hero-title" id="hTitle">Car parked</div><div class="muted small" id="hSub">Connect the adapter with the ignition on.</div></div>
+          <div>
+            <div class="hero-state"><i></i><span id="hState">Offline</span></div>
+            <div class="hero-title" id="hTitle">Car parked</div>
+            <div class="muted" id="hSub">Connect the adapter with the ignition on.</div>
+          </div>
           <span class="chip" id="tripState">No trip</span>
         </div>
         <div class="livebar off" id="hLive">
-          <div><span class="k">RPM</span><span class="v" id="hRpm">–</span></div>
-          <div><span class="k">Coolant</span><span class="v" id="hCool">–</span></div>
-          <div><span class="k">Speed</span><span class="v" id="hSpd">–</span></div>
-          <div><span class="k">Battery</span><span class="v" id="hVolt">–</span></div>
+          <div><span class="k">RPM</span><span class="v" id="hRpm">–</span><span class="u">rpm</span></div>
+          <div><span class="k">Coolant</span><span class="v" id="hCool">–</span><span class="u">°C</span></div>
+          <div><span class="k">Speed</span><span class="v" id="hSpd">–</span><span class="u">km/h</span></div>
+          <div><span class="k">Battery</span><span class="v" id="hVolt">–</span><span class="u">V</span></div>
         </div>
-        <div class="row hero-actions">
-          <button class="btn drive" id="btnDrive">Drive mode</button>
+        <div class="hero-actions">
+          <button class="btn drive" id="btnDrive"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2.2"/><path d="M3.5 10.5c3-1 5.8-1.5 8.5-1.5s5.5.5 8.5 1.5M10 13.8l-3 6.4M14 13.8l3 6.4"/></svg>Drive mode</button>
           <button class="btn" id="btnConnect">Connect adapter</button>
+          <button class="btn ghost" id="btnRec" disabled>End trip now</button>
         </div>
         <span class="muted small" id="tripInfo"></span>
       </div>
 
       <div class="panel">
-        <h2>Car health</h2>
+        <div class="sec-h"><h2>Car health</h2></div>
         <ul class="health" id="health"><li class="muted small">Drive a few trips and this fills in.</li></ul>
       </div>
 
       <div class="panel">
-        <h2>This week</h2>
+        <div class="sec-h"><h2>Last 7 days</h2></div>
         <div class="stats" id="week"></div>
       </div>
 
       <div class="panel">
-        <h2>Last trip</h2>
+        <div class="sec-h"><h2>Last trip</h2></div>
         <div id="lastTrip"><p class="muted small">No trips yet.</p></div>
       </div>
 
       <div class="panel">
-        <div class="row" style="justify-content:space-between"><h2 style="margin:0">Fuel</h2><button class="btn" id="btnFillOpen">Add fill-up</button></div>
+        <div class="sec-h"><h2>Fuel</h2><button class="btn sm" id="btnFillOpen">+ Add fill-up</button></div>
         <form id="fillForm" hidden class="fillform">
           <label class="field" for="fLit">Litres<input type="number" id="fLit" step="0.01" min="1" max="80" inputmode="decimal" required></label>
           <label class="field" for="fLei">Paid (lei)<input type="number" id="fLei" step="0.01" min="1" inputmode="decimal" required></label>
           <label class="field" for="fOdo">Odometer (km)<input type="number" id="fOdo" step="1" min="0" inputmode="numeric" placeholder="optional"></label>
           <label class="check" for="fFull"><input type="checkbox" id="fFull" checked> Filled to the top</label>
-          <div class="row"><button class="btn primary" type="submit">Save</button><button class="btn" type="button" id="btnFillCancel">Cancel</button></div>
+          <div class="row"><button class="btn primary" type="submit">Save</button><button class="btn ghost" type="button" id="btnFillCancel">Cancel</button></div>
         </form>
-        <div id="fuelStats" class="stats" style="margin-top:12px"></div>
+        <div id="fuelStats" class="stats"></div>
         <div id="fills"></div>
-      </div>
-
-      <div class="controls">
-        <button class="btn" id="btnRec" disabled>End trip now</button>
       </div>
       <p class="muted small" id="driveNote"></p>
     </section>
@@ -296,77 +392,90 @@ input[type=number]{background:var(--panel2);border:1px solid var(--line);color:v
           <div><span class="k">Trip km</span><span class="v" id="mKm">–</span></div>
           <div><span class="k">Battery V</span><span class="v" id="mVolt">–</span></div>
           <div><span class="k">Trip time</span><span class="v" id="mIat">–</span></div>
+          <div><span class="k">Data</span><span class="v" id="srcBadge">–</span></div>
         </div>
       </div>
     </section>
 
     <!-- TRIPS -->
     <section class="view" id="view-trips" hidden>
-      <div class="panel">
-        <h2>Trips</h2>
-        <div id="trips"><p class="muted small">No trips yet. Connect the adapter and start the engine: trips record themselves.</p></div>
-      </div>
-      <div class="panel">
-        <h2>Send trips to Claude</h2>
-        <p class="small muted">Closed trips are saved to your private GitHub repo, where Claude can read them. The key stays on this phone.</p>
-        <div class="row" style="align-items:flex-end">
-          <label class="field" for="ghRepo">Repository<input type="text" id="ghRepo" value="claudiufitui/golf-data" autocomplete="off" spellcheck="false"></label>
-          <label class="field" for="ghToken">GitHub key<input type="password" id="ghToken" placeholder="github_pat_…" autocomplete="off" spellcheck="false"></label>
-        </div>
-        <div class="row" style="margin-top:10px"><button class="btn" id="btnGhSave">Save key</button><button class="btn" id="btnGhSync">Send all trips now</button></div>
-        <p class="small" id="ghStatus" style="margin-top:8px"></p>
-      </div>
-      <div class="panel">
-        <h2>Fuel estimate calibration</h2>
-        <p class="small muted">The ECU doesn’t report fuel use, so it’s estimated from load and RPM. After a full tank, compare litres pumped with what the app estimated and set the correction here.</p>
-        <div class="row"><label class="field" for="calib">Correction factor<input type="number" id="calib" step="0.01" min="0.5" max="2" value="1.00"></label></div>
-      </div>
-      <div class="row"><button class="btn" id="btnExportAll">Export all trips (JSON)</button></div>
+      <div class="pagehead"><h1>Trips</h1><p id="tripsSum"></p></div>
+      <div id="trips" class="stack"><div class="empty">No trips yet. Connect the adapter and start the engine: trips record themselves.</div></div>
+      <div class="row"><button class="btn ghost sm" id="btnExportAll">Export all trips (JSON)</button></div>
     </section>
 
     <!-- CAR -->
     <section class="view" id="view-car" hidden>
+      <div class="pagehead"><h1>Car</h1><p>2008 Golf 5 · 1.9 TDI BLS</p></div>
       <div class="panel">
-        <h2>Connection</h2>
-        <div class="row" style="margin-bottom:6px"><label class="field" for="transportSel">How to talk to the adapter
-          <select id="transportSel"><option value="serial">Bluetooth classic (Android-Vlink)</option><option value="ble">Bluetooth LE (IOS-Vlink)</option></select></label></div>
-        <div class="row" style="margin-bottom:6px"><label class="field" for="srcSel">Engine data
-          <select id="srcSel"><option value="vw">VW direct, from the engine computer (falls back to OBD)</option><option value="obd">Standard OBD</option></select></label></div>
-        <p class="small muted" id="transportHint">Classic is the adapter’s Android mode and usually the most reliable. Pair “Android-Vlink” once in your phone’s Bluetooth settings with PIN 1234, then tap Connect.</p>
+        <div class="sec-h"><h2>Connection</h2></div>
+        <div class="stack">
+          <label class="field" for="srcSel">Engine data
+            <select id="srcSel"><option value="vw">VW direct, from the engine computer</option><option value="obd">Standard OBD</option></select></label>
+          <label class="field" for="transportSel">Adapter link
+            <select id="transportSel"><option value="serial">Bluetooth classic (Android-Vlink)</option><option value="ble">Bluetooth LE (IOS-Vlink)</option></select></label>
+          <p class="small muted" style="margin:0">VW direct falls back to standard OBD by itself if the engine computer won’t talk. <span id="transportHint">Classic is the adapter’s Android mode and usually the most reliable. Pair “Android-Vlink” once in your phone’s Bluetooth settings with PIN 1234, then tap Connect.</span></p>
+        </div>
       </div>
       <div class="panel">
-        <h2>Vehicle</h2>
+        <div class="sec-h"><h2>Vehicle</h2></div>
         <dl class="kv" id="vehicle"><dt>Status</dt><dd>Connect to read the car.</dd></dl>
       </div>
       <div class="panel">
-        <h2>Fault codes</h2>
+        <div class="sec-h"><h2>Fault codes</h2><button class="btn sm" id="btnDtc" disabled>Read codes</button></div>
         <p class="small muted">Read-only. This app never clears codes.</p>
-        <div class="row"><button class="btn" id="btnDtc" disabled>Read fault codes</button></div>
-        <div id="dtcOut" class="small" style="margin-top:10px"></div>
+        <div id="dtcOut" class="small"></div>
       </div>
       <div class="panel">
-        <h2>VW lab</h2>
-        <p class="small muted">VW’s own engine data (DPF soot, injectors, regeneration), beyond standard OBD. Read-only: it only asks, never writes, codes or resets. Park, engine idling, adapter connected. The report goes to Claude by itself.</p>
-        <div class="row"><button class="btn" id="btnVwTest">1. Test VW connection</button><button class="btn" id="btnVwScan">2. Scan all groups (~2–3 min)</button></div>
-        <div class="small mono" id="vwStatus" style="margin-top:8px"></div>
-        <pre class="log" id="vwSteps" style="margin-top:8px;max-height:220px"></pre>
-        <div id="vwOut"></div>
+        <div class="sec-h"><h2>Sync with Claude</h2></div>
+        <p class="small muted">Trips, logs and fill-ups go to your private GitHub repo, where Claude reads them. The key stays on this phone.</p>
+        <div class="row" style="align-items:flex-end">
+          <label class="field" for="ghRepo">Repository<input type="text" id="ghRepo" value="claudiufitui/golf-data" autocomplete="off" spellcheck="false"></label>
+          <label class="field" for="ghToken">GitHub key<input type="password" id="ghToken" placeholder="github_pat_…" autocomplete="off" spellcheck="false"></label>
+        </div>
+        <div class="row" style="margin-top:12px"><button class="btn" id="btnGhSave">Save key</button><button class="btn ghost" id="btnGhSync">Send all trips now</button></div>
+        <p class="small" id="ghStatus" style="margin:10px 0 0"></p>
       </div>
       <div class="panel">
-        <h2>Readiness monitors</h2>
-        <div id="monitors" class="small muted">Connect to read.</div>
+        <div class="sec-h"><h2>Fuel estimate</h2></div>
+        <p class="small muted">Only used in standard OBD mode, where fuel is estimated from load and rpm. In VW mode the engine computer reports it. Fill-ups suggest the right factor.</p>
+        <label class="field" for="calib" style="max-width:12em">Correction factor<input type="number" id="calib" step="0.01" min="0.5" max="2" value="1.00"></label>
       </div>
-      <div class="panel">
-        <h2>Sensors the ECU reports</h2>
-        <div id="pidOut" class="pids"><span class="muted small">Connect to see.</span></div>
-      </div>
-      <div class="panel">
-        <h2>Adapter log</h2>
-        <div class="row" style="margin-bottom:8px"><button class="btn" id="btnCopyLog">Copy log</button><button class="btn" id="btnSendLog">Send log to Claude</button></div>
-        <div class="log" id="log"></div>
-      </div>
+      <details class="panel">
+        <summary><h2>VW lab</h2><span class="sum-note">groups, scans</span></summary>
+        <div class="body">
+          <p class="small muted">VW’s own engine data, beyond standard OBD. Read-only: it only asks, never writes or resets. Park with the engine idling. Reports go to Claude by themselves.</p>
+          <div class="row"><button class="btn sm" id="btnVwTest">Test connection</button><button class="btn sm" id="btnVwScan">Scan all groups (~3 min)</button></div>
+          <div class="small mono" id="vwStatus" style="margin-top:8px"></div>
+          <pre class="log" id="vwSteps" style="margin-top:8px;max-height:220px"></pre>
+          <div id="vwOut"></div>
+        </div>
+      </details>
+      <details class="panel">
+        <summary><h2>Readiness monitors</h2></summary>
+        <div class="body"><div id="monitors" class="small muted">Connect to read.</div></div>
+      </details>
+      <details class="panel">
+        <summary><h2>Standard OBD sensors</h2></summary>
+        <div class="body"><div id="pidOut" class="pids"><span class="muted small">Connect in standard OBD mode to see.</span></div></div>
+      </details>
+      <details class="panel">
+        <summary><h2>Adapter log</h2><span class="sum-note">sent with every trip</span></summary>
+        <div class="body">
+          <div class="row" style="margin-bottom:10px"><button class="btn sm" id="btnCopyLog">Copy log</button><button class="btn sm" id="btnSendLog">Send log to Claude</button></div>
+          <div class="log" id="log"></div>
+        </div>
+      </details>
     </section>
   </main>
+
+  <div class="tabbar">
+    <nav aria-label="Sections">
+      <button data-view="home" aria-current="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4.2 17a8.5 8.5 0 1 1 15.6 0"/><path d="M12 13l4-4.5"/><circle cx="12" cy="13" r="1.3" fill="currentColor"/></svg>Home</button>
+      <button data-view="trips"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="18" r="2.2"/><circle cx="18" cy="6" r="2.2"/><path d="M8 18h7.5a3.5 3.5 0 0 0 0-7h-7a3.5 3.5 0 0 1 0-7H16"/></svg>Trips</button>
+      <button data-view="car"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 16.5V12l1.8-4.6A2 2 0 0 1 8.7 6h6.6a2 2 0 0 1 1.9 1.4L19 12v4.5"/><path d="M3.5 16.5h17"/><path d="M5 12h14"/><circle cx="7.5" cy="16.5" r="1.8"/><circle cx="16.5" cy="16.5" r="1.8"/></svg>Car</button>
+    </nav>
+  </div>
 </div>
 
 <script>
@@ -960,7 +1069,7 @@ async function syncPending(force){
   try{const list=(await getAll('trips')).filter(t=>!t.open&&!t.demo&&(force||!t.synced)).sort((a,b)=>a.start-b.start);
     if(!list.length){ghStatus('All trips are already sent.','ok');return;}
     let n=0;for(const t of list){ghStatus(`Sending ${++n} of ${list.length}…`);await syncTrip(t);}
-    ghStatus(`Sent ${list.length} trip${list.length>1?'s':''} · ${new Date().toLocaleTimeString('ro-RO',{hour:'2-digit',minute:'2-digit'})}`,'ok');renderTrips();
+    ghStatus(`Sent ${list.length} trip${list.length>1?'s':''} · ${new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})}`,'ok');renderTrips();
   }catch(e){ghStatus('Couldn’t send: '+e.message,'bad');log('Sync: '+e.message);}
   finally{syncing=false;if(syncAgain)syncPending();}
 }
@@ -982,20 +1091,41 @@ async function reviveTrips(){
 function fmt(s){s=Math.round(s||0);const m=Math.floor(s/60);return m>=60?`${Math.floor(m/60)}:${String(m%60).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`:`${m}:${String(s%60).padStart(2,'0')}`;}
 function sparkSvg(sp){
   if(!sp||sp.length<2)return '';const w=600,h=56,n=sp.length;const maxS=Math.max(60,...sp.map(x=>x[0]));const maxR=Math.max(3000,...sp.map(x=>x[1]));
-  const path=(i,max)=>sp.map((x,j)=>`${(j/(n-1)*w).toFixed(1)},${(h-2-x[i]/max*(h-6)).toFixed(1)}`).join(' ');
-  return `<svg class="spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-label="Speed and RPM over the trip"><polyline points="${path(1,maxR)}" fill="none" stroke="#4a5661" stroke-width="1.5"/><polyline points="${path(0,maxS)}" fill="none" stroke="#ff7a3d" stroke-width="2"/></svg>`;
+  const path=(i,max)=>sp.map((x,j)=>`${(j/(n-1)*w).toFixed(1)},${(h-3-x[i]/max*(h-8)).toFixed(1)}`).join(' ');
+  return `<svg class="spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-label="Speed and RPM over the trip"><polyline points="${path(1,maxR)}" fill="none" stroke="#4a5661" stroke-width="1.5" vector-effect="non-scaling-stroke"/><polyline points="${path(0,maxS)}" fill="none" stroke="#ff7a3d" stroke-width="2" vector-effect="non-scaling-stroke"/></svg>`;
+}
+const hm=ms=>new Date(ms).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
+function dayName(ms){const d=new Date(ms),t=new Date();const d0=new Date(d.getFullYear(),d.getMonth(),d.getDate()),t0=new Date(t.getFullYear(),t.getMonth(),t.getDate());
+  const diff=Math.round((t0-d0)/86400000);if(diff===0)return 'Today';if(diff===1)return 'Yesterday';
+  return d.toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short',...(d.getFullYear()!==t.getFullYear()?{year:'numeric'}:{})});}
+function tripCard(t,opts={}){
+  const vw=t.src==='vw',end=t.end||(t.start+(t.durationS||0)*1000);
+  const cons=t.avgL100!=null?`<div><span class="k">${vw?'L/100 · ECU':'L/100 · est.'}</span><span class="v">${(+t.avgL100).toFixed(1)}</span></div>`:`<div><span class="k">Fuel</span><span class="v">${t.fuelL!=null?(+t.fuelL).toFixed(2):'–'}<small>L</small></span></div>`;
+  const meta=[`max ${t.maxRpm} rpm`,`${t.maxBoost} bar peak`,t.maxCoolant!=null&&t.maxCoolant>-99?`coolant ${t.coolantStart!=null?t.coolantStart+'→':''}${t.maxCoolant} °C`:null,`idle ${fmt(t.idleS)}`,
+    t.warmTo80S!=null?`80 °C after ${fmt(t.warmTo80S)}`:'<WARN>never reached 80 °C',t.stops?`${t.stops} stop${t.stops>1?'s':''}`:null,t.starts?.[0]?.crankV!=null?`start ${t.starts[0].crankV.toFixed(1)} V`:null].filter(Boolean)
+    .map(x=>x.startsWith('<WARN>')?`<span class="warn">${x.slice(6)}</span>`:`<span>${x}</span>`).join('');
+  return `<article class="trip${opts.flat?' flat':''}">
+    <div class="t-top"><span class="t-when">${opts.day?dayName(t.start)+' · ':''}<b>${hm(t.start)}</b> → ${hm(end)}</span>
+      <span class="t-tags">${t.demo?'<span class="chip plain">demo</span>':''}<span class="chip ${vw?'vw':'plain'}">${vw?'VW':'OBD'}</span>${t.synced?'<span class="chip ok">sent</span>':''}</span></div>
+    <div class="t-head"><div><span class="k">Distance</span><span class="v">${(+t.km).toFixed(1)}<small>km</small></span></div><div><span class="k">Engine on</span><span class="v">${fmt(t.engineS??t.durationS)}</span></div>${cons}</div>
+    ${sparkSvg(t.spark)}
+    <div class="t-meta">${meta}</div>
+    ${t.demo||opts.noActs?'':`<div class="t-foot"><span class="legend">${t.spark&&t.spark.length>1?'<span><i style="background:#ff7a3d"></i>speed</span><span><i style="background:#4a5661"></i>rpm</span>':''}</span><span class="row"><button class="btn sm ghost" data-csv="${t.id}">CSV</button><button class="btn sm ghost" data-share="${t.id}">Share</button></span></div>`}
+  </article>`;
+}
+function wireTripButtons(el){
+  el.querySelectorAll('[data-csv]').forEach(b=>b.onclick=()=>exportTrip(b.dataset.csv,false));
+  el.querySelectorAll('[data-share]').forEach(b=>b.onclick=()=>exportTrip(b.dataset.share,true));
 }
 async function renderTrips(){
   const saved=(await getAll('trips')).sort((a,b)=>b.start-a.start);const all=demoTrips.concat(saved);
   const el=$('trips');
-  if(!all.length){el.innerHTML='<p class="muted small">No trips yet. Connect the adapter and start the engine: trips record themselves.</p>';return;}
-  el.innerHTML=all.map(t=>{const d=new Date(t.start);
-    return `<div class="trip"><span class="when">${d.toLocaleDateString('ro-RO',{weekday:'short',day:'numeric',month:'short'})} · ${d.toLocaleTimeString('ro-RO',{hour:'2-digit',minute:'2-digit'})}${t.demo?' <span class="chip">demo, not saved</span>':''}${t.synced?' <span class="chip ok">sent</span>':''}</span>
-      <span class="acts">${t.demo?'':`<button class="btn" data-csv="${t.id}">CSV</button><button class="btn" data-share="${t.id}">Share</button>`}</span>
-      <span class="meta">${t.km} km · ${fmt(t.engineS??t.durationS)} driving${t.stops?' · '+t.stops+' stop'+(t.stops>1?'s':''):''} · ${t.avgL100!=null?t.avgL100+' L/100 est. · ':''}max ${t.maxRpm} rpm · ${t.maxBoost} bar · idle ${fmt(t.idleS)}${t.warmTo80S!=null?' · 80°C at '+fmt(t.warmTo80S):' · never reached 80°C'}</span>
-      ${sparkSvg(t.spark)}</div>`;}).join('');
-  el.querySelectorAll('[data-csv]').forEach(b=>b.onclick=()=>exportTrip(b.dataset.csv,false));
-  el.querySelectorAll('[data-share]').forEach(b=>b.onclick=()=>exportTrip(b.dataset.share,true));
+  if(!all.length){el.innerHTML='<div class="empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="18" r="2.2"/><circle cx="18" cy="6" r="2.2"/><path d="M8 18h7.5a3.5 3.5 0 0 0 0-7h-7a3.5 3.5 0 0 1 0-7H16"/></svg>No trips yet. Connect the adapter and start the engine: trips record themselves.</div>';$('tripsSum').textContent='';return;}
+  const real=saved.filter(t=>!t.demo),km=real.reduce((a,t)=>a+(+t.km||0),0);
+  $('tripsSum').textContent=`${real.length} trip${real.length===1?'':'s'} · ${km.toFixed(0)} km`;
+  let html='',lastDay=null;
+  for(const t of all){const d=dayName(t.start);if(d!==lastDay){html+=`<div class="day">${d}</div>`;lastDay=d;}html+=tripCard(t);}
+  el.innerHTML=html;wireTripButtons(el);
 }
 async function tripCsv(id){const t=(await getAll('trips')).find(x=>x.id===id);const rows=await tripRows(id);
   return t.fields.join(',')+'\n'+rows.map(r=>r.map(v=>v==null?'':v).join(',')).join('\n');}
@@ -1125,7 +1255,7 @@ function updateCockpit(now){
   // Strip
   const t=rec||paused;
   put$('mAvg','text',t&&t.km>0.3?(t.fuel/t.km*100).toFixed(1):'–');put$('mKm','text',t?t.km.toFixed(1):'–');
-  put$('hRpm','text',r!=null?String(Math.round(r)):'–');put$('hCool','text',c!=null?Math.round(c)+'°':'–');put$('hSpd','text',v!=null?String(Math.round(v)):'–');put$('hVolt','text',live.volt!=null?live.volt.toFixed(1):'–');
+  put$('hRpm','text',r!=null?String(Math.round(r)):'–');put$('hCool','text',c!=null?String(Math.round(c)):'–');put$('hSpd','text',v!=null?String(Math.round(v)):'–');put$('hVolt','text',live.volt!=null?live.volt.toFixed(1):'–');
   put$('miniRpm','text',r!=null?String(Math.round(r)):'–');put$('miniCool','text',c!=null?String(Math.round(c)):'–');put$('miniBoost','text',b!=null?Math.max(0,b).toFixed(2):'–');
   $('miniCool').parentElement.className='mv'+(c!=null&&c<60?' cold':c!=null&&c>105?' hot':'');$('miniRpm').parentElement.className='mv'+(rs==='hot'?' hot':'');
   put$('mVolt','text',live.volt!=null?live.volt.toFixed(1):'–');put$('mVolt','class','v'+(live.volt!=null&&((r??0)>500?live.volt<13.2:live.volt<12.2)?' warn':''));
@@ -1139,13 +1269,14 @@ function hline(state,title,detail){return `<li><span class="dot ${state}"></span
 async function renderHome(){
   // status
   const t=$('hTitle'),sub=$('hSub');
+  let st='off',sl='Offline';
   if(demo){t.textContent='Demo';sub.textContent='Invented values, not your car.';}
-  else if(connected&&live.rpm>300){t.textContent='Engine running';sub.textContent='Tap Drive mode once the phone is on its stand.';}
-  else if(connected){t.textContent='Connected';sub.textContent='Ignition on, engine off.';}
-  else if(parkedSince){t.textContent='Car parked';sub.textContent='The adapter is resting. It reconnects when you start the engine.';}
-  else if(wantConnected){t.textContent='Looking for the car…';sub.textContent='Turn the ignition on.';}
+  else if(connected&&live.rpm>300){st='run';sl=VWL.live?'Live · VW direct':'Live · standard OBD';t.textContent='Engine running';sub.textContent='Tap Drive mode once the phone is on its stand.';}
+  else if(connected){st='conn';sl='Adapter connected';t.textContent=vwWait?'Waiting for the engine':'Connected';sub.textContent=vwWait?'Start the engine: the app notices it from the battery and opens VW mode.':'Ignition on, engine off.';}
+  else if(parkedSince){sl='Adapter resting';t.textContent='Car parked';sub.textContent='The adapter is resting. It reconnects when you start the engine.';}
+  else if(wantConnected){st='look';sl='Searching';t.textContent='Looking for the car…';sub.textContent='Turn the ignition on.';}
   else{t.textContent='Car parked';sub.textContent=recall('golf-transport')==='serial'||transport==='serial'?'Opens the connection by itself when you start the engine with the app open.':'Tap Connect adapter with the ignition on.';}
-  $('hLive').classList.toggle('off',!(connected||demo));
+  $('hLive').classList.toggle('off',!(connected||demo));$('hero').dataset.state=st;$('hState').textContent=sl;
   const trips=(await getAll('trips')).filter(x=>!x.demo).sort((a,b)=>b.start-a.start);
   // health
   const H=[];const recent=trips.slice(0,8);
@@ -1158,7 +1289,7 @@ async function renderHome(){
   if(bh.length){const l=bh[bh.length-1],cv=l.crankV,rv=l.restV;
     const prev=bh.slice(-8,-1),avgPrev=prev.length>=3?prev.reduce((a,x)=>a+x.crankV,0)/prev.length:null;
     const trend=avgPrev!=null?(cv-avgPrev<=-0.3?` Falling: ${avgPrev.toFixed(1)} V on average before.`:` Steady over the last ${prev.length+1} starts.`):'';
-    const when=new Date(l.at).toLocaleDateString('ro-RO',{day:'numeric',month:'short'});
+    const when=new Date(l.at).toLocaleDateString('en-GB',{day:'numeric',month:'short'});
     const st=cv<9.6||rv<12.0?'bad':cv<10.0||rv<12.3||trend.startsWith(' Falling')?'warn':'ok';
     H.push(hline(st,st==='ok'?'Battery at start: strong':st==='warn'?'Battery at start: watch it':'Battery at start: weak',`Last start (${when}): ${rv.toFixed(1)} V at rest, ${cv.toFixed(1)} V lowest while cranking.${trend} Healthy: above 12.4 at rest and 10.0 cranking.`));}
   const volts=recent.map(x=>x.minVolt).filter(v=>v!=null);
@@ -1167,7 +1298,7 @@ async function renderHome(){
   if(longT.length){const mc=Math.max(...longT.map(x=>x.maxCoolant));
     H.push(mc>=89?hline('ok','Thermostat: fine',`Reaches ${mc}°C on longer trips.`):mc>=84?hline('warn','Thermostat: under watch',`Tops out at ${mc}°C on trips over 10 minutes. Normal is about 90°C. A 20-minute motorway run will settle it.`):hline('bad','Thermostat: probably opening early',`Only ${mc}°C on longer trips. Worth replacing at the next service.`));}
   let dtc=null;try{dtc=JSON.parse(recall('golf-dtc')||'null');}catch(e){}
-  if(dtc)H.push(dtc.mil||dtc.count?hline('bad','Fault codes stored',`${dtc.count} code${dtc.count===1?'':'s'}, warning light ${dtc.mil?'on':'off'}. Read them in the Car tab and send them to Claude.`):hline('ok','Fault codes: none',`Checked ${new Date(dtc.at).toLocaleDateString('ro-RO',{day:'numeric',month:'short'})}.`));
+  if(dtc)H.push(dtc.mil||dtc.count?hline('bad','Fault codes stored',`${dtc.count} code${dtc.count===1?'':'s'}, warning light ${dtc.mil?'on':'off'}. Read them in the Car tab and send them to Claude.`):hline('ok','Fault codes: none',`Checked ${new Date(dtc.at).toLocaleDateString('en-GB',{day:'numeric',month:'short'})}.`));
   const lastLong=trips.find(x=>(x.hotS||0)>=600);
   const days=lastLong?Math.floor((Date.now()-lastLong.start)/dayMs):null;
   if(trips.length)H.push(days!=null&&days<=10?hline('ok','DPF: had a good run',`${days===0?'Today':days+' day'+(days>1?'s':'')+' ago'}: 10+ minutes at 2000+ rpm above 60 km/h.`):hline('warn','DPF: due a long run',(days!=null?`Last one ${days} days ago. `:'No long run recorded yet. ')+'20 minutes on the ring road or motorway lets it clean itself.'));
@@ -1177,10 +1308,10 @@ async function renderHome(){
   // this week
   const wk=trips.filter(x=>Date.now()-x.start<7*dayMs);
   const km=wk.reduce((a,x)=>a+(x.km||0),0),fuel=wk.reduce((a,x)=>a+(x.fuelL||0),0),idle=wk.reduce((a,x)=>a+(x.idleS||0),0);
-  $('week').innerHTML=hstat('Distance',km.toFixed(0),'km')+hstat('Trips',wk.length,'')+hstat('Consumption',km>1?(fuel/km*100).toFixed(1):'–','L/100 est.')+hstat('Idling',fmt(idle),'min');
+  $('week').innerHTML=hstat('Distance',km.toFixed(0),'km')+hstat('Trips',wk.length,'')+hstat('Consumption',km>1?(fuel/km*100).toFixed(1):'–',wk.length&&wk.every(x=>x.src==='vw')?'L/100 · ECU':wk.some(x=>x.src==='vw')?'L/100 · ECU + est.':'L/100 · est.')+hstat('Idling',fmt(idle),idle>=3600?'h:mm:ss':'min:s');
   // last trip
   const lt=trips[0];
-  $('lastTrip').innerHTML=lt?`<div class="meta mono small">${new Date(lt.start).toLocaleDateString('ro-RO',{weekday:'short',day:'numeric',month:'short'})} · ${new Date(lt.start).toLocaleTimeString('ro-RO',{hour:'2-digit',minute:'2-digit'})} · ${lt.km} km · ${fmt(lt.engineS??lt.durationS)} · ${lt.avgL100!=null?lt.avgL100+' L/100 est. · ':''}max ${lt.maxBoost} bar · coolant up to ${lt.maxCoolant}°C</div>${sparkSvg(lt.spark)}`:'<p class="muted small">No trips yet.</p>';
+  $('lastTrip').innerHTML=lt?tripCard(lt,{flat:true,day:true}):'<p class="muted small">No trips yet.</p>';wireTripButtons($('lastTrip'));
   await renderFuel(trips);
 }
 // ---- fuel log: full-to-full. The litres at a fill-up are what was burned since the previous full fill-up.
@@ -1204,10 +1335,10 @@ async function renderFuel(trips){
   const sug=[...legs].reverse().find(l=>l.suggest);
   $('fuelStats').innerHTML=fills.length?hstat('Real consumption',tk?(tl/tk).toFixed(1):'–','L/100 · measured')+hstat('Cost',good.length?(good.reduce((s,l)=>s+l.leiKm*l.km,0)/tk*100).toFixed(0):'–','lei / 100 km')+hstat('Last price',lastPrice?lastPrice.toFixed(2):'–','lei / L')+hstat('Fill-ups',fills.length,''):'';
   const byTo=Object.fromEntries(legs.map(l=>[l.to,l]));
-  $('fills').innerHTML=(sug&&Math.abs(sug.suggest-calib)>0.03?`<p class="small">Your real consumption suggests a fuel-estimate correction of <b>${sug.suggest.toFixed(2)}</b> (now ${calib.toFixed(2)}). <button class="btn" id="btnApplyCal" type="button">Apply</button></p>`:'')+
-    (fills.length?[...fills].reverse().map(f=>{const l=byTo[f.id];return `<div class="fill"><div><b>${new Date(f.at).toLocaleDateString('ro-RO',{day:'numeric',month:'short',year:'numeric'})}</b> <span class="meta">· ${f.litres} L · ${f.lei} lei · ${(f.lei/f.litres).toFixed(2)} lei/L${f.odo?' · '+f.odo+' km':''}${f.full?'':' · not full'}</span>
+  $('fills').innerHTML=(sug&&Math.abs(sug.suggest-calib)>0.03?`<div class="callout"><span style="flex:1 1 200px">Your fill-ups suggest a correction of <b>${sug.suggest.toFixed(2)}</b> for the OBD fuel estimate (now ${calib.toFixed(2)}).</span><button class="btn sm" id="btnApplyCal" type="button">Apply</button></div>`:'')+
+    (fills.length?[...fills].reverse().map(f=>{const l=byTo[f.id];return `<div class="fill"><div><b>${new Date(f.at).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})}</b> <span class="meta">· ${f.litres} L · ${f.lei} lei · ${(f.lei/f.litres).toFixed(2)} lei/L${f.odo?' · '+f.odo+' km':''}${f.full?'':' · not full'}</span>
       ${l&&l.l100!=null?`<div class="meta">${l.km.toFixed(0)} km since previous (${l.src}) · ${(l.leiKm*100).toFixed(0)} lei/100 km</div>`:'<div class="meta">The next full fill-up will give the consumption for this tank.</div>'}</div>
-      <div class="res">${l&&l.l100!=null?l.l100.toFixed(1)+'<span class="meta"> L/100</span>':''}</div><button class="btn" type="button" data-delfill="${f.id}">Delete</button></div>`;}).join(''):'<p class="muted small">Log each fill-up: litres, lei, and the odometer if you can. From the second full tank on, you get your real consumption and cost.</p>');
+      <div class="res">${l&&l.l100!=null?l.l100.toFixed(1)+'<span class="meta"> L/100</span>':''}</div><button class="btn sm ghost" type="button" data-delfill="${f.id}">Delete</button></div>`;}).join(''):'<p class="muted small">Log each fill-up: litres, lei, and the odometer if you can. From the second full tank on, you get your real consumption and cost.</p>');
   $('btnApplyCal')&&($('btnApplyCal').onclick=()=>{calib=+sug.suggest.toFixed(2);store('golf-calib',String(calib));$('calib').value=calib.toFixed(2);renderHome();});
   document.querySelectorAll('[data-delfill]').forEach(b=>b.onclick=async()=>{if(b.dataset.armed){await delRec('fills',b.dataset.delfill);syncFills();renderHome();}else{b.dataset.armed='1';b.textContent='Tap again to delete';}});
 }
@@ -1218,6 +1349,13 @@ $('fillForm').onsubmit=async e=>{e.preventDefault();
   if(!(f.litres>0&&f.lei>0))return;await put('fills',f);$('fillForm').reset();$('fFull').checked=true;$('fillForm').hidden=true;syncFills();renderHome();};
 async function syncFills(){if(!gh.token)return;try{await ghPut('fills.json',JSON.stringify((await getAll('fills')).sort((a,b)=>a.at-b.at),null,1),'Fill-ups');}catch(e){log('Sync fills: '+e.message);}}
 setInterval(()=>{if(!driving&&!document.hidden&&!$('view-home').hidden)renderHome();},5000);
+function showSource(){
+  const s=!connected?null:VWL.live?'vw':obdLive?'obd':vwWait?'wait':null;
+  const txt={vw:'VW',obd:'OBD',wait:'VW …'}[s]||'–';
+  put$('srcBadge','text',txt);put$('srcBadge','class','v'+(s==='vw'?' vw':s==='obd'?' obd':''));
+  put$('chipSrc','hidden',!s);put$('chipSrc','text',s==='vw'?'VW direct':s==='obd'?'Standard OBD':'VW · waiting');put$('chipSrc','class','chip'+(s==='vw'?' vw':s==='obd'?' ok':''));
+}
+setInterval(showSource,1000);
 
 // =============== VW lab: VW's own diagnostics (TP 2.0 channel + KWP2000), READ-ONLY ===============
 // The engine ECU (address 01) speaks VW's language on CAN: we ask the gateway for a channel on 0x200,
