@@ -287,7 +287,7 @@ body.drive-full .tile{min-height:0}
 </div>
 <div class="app">
   <header class="top">
-    <div class="brand"><span class="mark">Golfozaur <b>3000</b></span><small>1.9 TDI BLS · v46</small></div>
+    <div class="brand"><span class="mark">Golfozaur <b>3000</b></span><small>1.9 TDI BLS · v47</small></div>
     <div class="chips">
       <span class="chip rec" id="chipRec" hidden>REC</span>
       <span class="chip" id="chipSrc" hidden>VW</span>
@@ -865,8 +865,11 @@ function noteStart(){
   // 21 Nov: a real start pulls the battery down by well over 1 V (the starter); surface charge after parking doesn't.
   if(now-vbuf[vbuf.length-1].t>5000||crankV==null||restV>13.4||restV-crankV<1.0){log('Start not recorded (readings don\'t cover the start)');vbuf=[];return;}
   const keyOn=vbuf.find(x=>x.v<restV-0.3);
-  pendingStart={at:now,restV,crankV,keyS:keyOn?Math.round((now-keyOn.t)/1000):null,n:vbuf.length};
-  log(`Start: battery ${restV} V at rest, ${crankV??'?'} V lowest while cranking`);
+  // 21 Nov: the lowest reading is the split-second jolt when the starter engages (6.9 V tonight). Battery tests judge the
+  // steady voltage while the engine turns over, so that's kept too: the middle of the readings during cranking.
+  const ck=crank.filter(x=>x.v<restV-1.5).map(x=>x.v).sort((a,b)=>a-b);const crankMed=ck.length>=3?ck[Math.floor(ck.length/2)]:null;
+  pendingStart={at:now,restV,crankV,crankMed,keyS:keyOn?Math.round((now-keyOn.t)/1000):null,n:vbuf.length};
+  log(`Start: battery ${restV} V at rest, ${crankMed??'?'} V while cranking, ${crankV} V lowest (starter jolt)`);
   try{const h=JSON.parse(recall('golf-batt')||'[]');h.push(pendingStart);store('golf-batt',JSON.stringify(h.slice(-60)));}catch(e){}
   vbuf=[];
 }
@@ -1123,7 +1126,7 @@ function tripCard(t,opts={}){
   const vw=t.src==='vw',end=t.end||(t.start+(t.durationS||0)*1000);
   const cons=t.avgL100!=null?`<div><span class="k">${vw?'L/100 · ECU':'L/100 · est.'}</span><span class="v">${(+t.avgL100).toFixed(1)}</span></div>`:`<div><span class="k">Fuel</span><span class="v">${t.fuelL!=null?(+t.fuelL).toFixed(2):'–'}<small>L</small></span></div>`;
   const meta=[`max ${t.maxRpm} rpm`,`${t.maxBoost} bar peak`,t.maxCoolant!=null&&t.maxCoolant>-99?`coolant ${t.coolantStart!=null?t.coolantStart+'→':''}${t.maxCoolant} °C`:null,`idle ${fmt(t.idleS)}`,
-    t.warmTo80S!=null?`80 °C after ${fmt(t.warmTo80S)}`:'<WARN>never reached 80 °C',t.stops?`${t.stops} stop${t.stops>1?'s':''}`:null,t.starts?.[0]?.crankV!=null?`start ${t.starts[0].crankV.toFixed(1)} V`:null].filter(Boolean)
+    t.warmTo80S!=null?`80 °C after ${fmt(t.warmTo80S)}`:'<WARN>never reached 80 °C',t.stops?`${t.stops} stop${t.stops>1?'s':''}`:null,t.starts?.[0]?.crankMed!=null?`cranking ${t.starts[0].crankMed.toFixed(1)} V`:null].filter(Boolean)
     .map(x=>x.startsWith('<WARN>')?`<span class="warn">${x.slice(6)}</span>`:`<span>${x}</span>`).join('');
   return `<article class="trip${opts.flat?' flat':''}">
     <div class="t-top"><span class="t-when">${opts.day?dayName(t.start)+' · ':''}<b>${hm(t.start)}</b> → ${hm(end)}</span>
@@ -1306,13 +1309,14 @@ async function renderHome(){
   else if(boost>=0.9)H.push(hline('ok','Turbo: healthy',`Peak ${boost.toFixed(2)} bar in recent trips. Normal for your engine is 1.0–1.2.`));
   else H.push(hline('','Turbo: not tested hard lately',`Peak ${boost.toFixed(2)} bar. It shows its full boost only under full throttle above 1800 rpm.`));
   let bh=[];try{bh=JSON.parse(recall('golf-batt')||'[]');}catch(e){}
-  bh=bh.filter(x=>x.crankV!=null);
-  if(bh.length){const l=bh[bh.length-1],cv=l.crankV,rv=l.restV;
-    const prev=bh.slice(-8,-1),avgPrev=prev.length>=3?prev.reduce((a,x)=>a+x.crankV,0)/prev.length:null;
+  const hadOld=bh.some(x=>x.crankV!=null);bh=bh.filter(x=>x.crankMed!=null);
+  if(!bh.length&&hadOld)H.push(hline('','Battery at start: measuring','The next start gives the first proper reading: the steady voltage while cranking, not just the starter’s split-second jolt.'));
+  if(bh.length){const l=bh[bh.length-1],cv=l.crankMed,rv=l.restV;
+    const prev=bh.slice(-8,-1),avgPrev=prev.length>=3?prev.reduce((a,x)=>a+x.crankMed,0)/prev.length:null;
     const trend=avgPrev!=null?(cv-avgPrev<=-0.3?` Falling: ${avgPrev.toFixed(1)} V on average before.`:` Steady over the last ${prev.length+1} starts.`):'';
     const when=new Date(l.at).toLocaleDateString('en-GB',{day:'numeric',month:'short'});
     const st=cv<9.6||rv<12.0?'bad':cv<10.0||rv<12.3||trend.startsWith(' Falling')?'warn':'ok';
-    H.push(hline(st,st==='ok'?'Battery at start: strong':st==='warn'?'Battery at start: watch it':'Battery at start: weak',`Last start (${when}): ${rv.toFixed(1)} V at rest, ${cv.toFixed(1)} V lowest while cranking.${trend} Healthy: above 12.4 at rest and 10.0 cranking.`));}
+    H.push(hline(st,st==='ok'?'Battery at start: strong':st==='warn'?'Battery at start: watch it':'Battery at start: weak',`Last start (${when}): ${rv.toFixed(1)} V at rest, ${cv.toFixed(1)} V while cranking.${trend} Healthy: above 12.4 at rest and 10.0 cranking.`));}
   const volts=recent.map(x=>x.minVolt).filter(v=>v!=null);
   if(volts.length){const mv=Math.min(...volts);H.push(mv>=13.2?hline('ok','Alternator: charging fine',`Lowest while driving: ${mv.toFixed(1)} V.`):hline('warn','Alternator: check',`Dropped to ${mv.toFixed(1)} V while driving above 1200 rpm. It should stay above 13.2 V.`));}
   const longT=trips.filter(x=>(x.engineS||0)>=600&&x.maxCoolant>0).slice(0,5);
