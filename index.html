@@ -188,7 +188,7 @@ input[type=number]{background:var(--panel2);border:1px solid var(--line);color:v
 </div>
 <div class="app">
   <div class="top">
-    <div class="brand">Golfozaur 3000<small>1.9 TDI BLS · v39</small></div>
+    <div class="brand">Golfozaur 3000<small>1.9 TDI BLS · v40</small></div>
     <div class="chips">
       <span class="chip" id="chipBt">Adapter off</span>
       <span class="chip" id="chipGps">GPS off</span>
@@ -360,7 +360,7 @@ input[type=number]{background:var(--panel2);border:1px solid var(--line);color:v
       </div>
       <div class="panel">
         <h2>Adapter log</h2>
-        <div class="row" style="margin-bottom:8px"><button class="btn" id="btnCopyLog">Copy log</button></div>
+        <div class="row" style="margin-bottom:8px"><button class="btn" id="btnCopyLog">Copy log</button><button class="btn" id="btnSendLog">Send log to Claude</button></div>
         <div class="log" id="log"></div>
       </div>
     </section>
@@ -1233,7 +1233,7 @@ async function vOpen(){
       // A disconnect must be answered with a disconnect; without it the ECU may keep the half-open channel and
       // refuse the next one for a few seconds. Then give it a moment.
       if(hung)await vsend('A8',0,300);
-      await new Promise(r=>setTimeout(r,1200));
+      await new Promise(r=>setTimeout(r,VW.reopening?4000:1200));
     }
   }
   vstep('Could not open a channel to the engine',false);return false;
@@ -1296,7 +1296,7 @@ function vShow(){
     (rows.length?`<div class="vwtab"><table><tr><th>Group</th><th>1</th><th>2</th><th>3</th><th>4</th><th>Probably</th></tr>${rows.map(r=>`<tr><td>${String(r.g).padStart(3,'0')}</td>${r.dec.map(d=>`<td>${d}</td>`).join('')}<td class="muted">${VWG[r.g]||''}</td></tr>`).join('')}</table></div><p class="small muted">Units are a first guess. Claude checks them against the raw bytes.</p>`:'');
 }
 async function vUpload(kind){
-  const id=tripId();const rep={kind,at:new Date().toISOString(),app:document.querySelector('.brand small')?.textContent,ecuId:VW.ecuId,channel:{tx:VW.tx,rx:VW.rx,params:VW.params,t1:VW.t1},repeats:VW.retx,steps:VW.steps,results:VW.results,log:VW.log};
+  const id=tripId();const rep={kind,at:new Date().toISOString(),app:document.querySelector('.brand small')?.textContent,ecuId:VW.ecuId,channel:{tx:VW.tx,rx:VW.rx,params:VW.params,t1:VW.t1},repeats:VW.retx,steps:VW.steps,results:VW.results,log:VW.log,appLog:logLines.slice(-500)};
   store('golf-vw',JSON.stringify({at:rep.at,ecuId:rep.ecuId,results:VW.results}));
   if(!gh.token){vstep('No GitHub key: use Copy log in the Car tab to send it');return;}
   try{await ghPut(`lab/${id}-${kind}.json`,JSON.stringify(rep,null,1),`VW lab ${kind} ${id}`);vstep('Report sent to Claude (lab/'+id+'-'+kind+'.json)',true);}catch(e){vstep('Could not send the report: '+e.message,false);}
@@ -1334,8 +1334,8 @@ async function vRun(kind){
         if(r.raw){good++;fails=0;vShow();}
         else if(r.err==='no answer'||VW.dead){fails++;
           if(VW.dead||fails>=3){if(reopen++>=3){vstep('Channel kept dropping, stopping at group '+g,false);break;}
-            VW.lastFails=fails;vstep('Channel dropped at group '+g+', reopening');await vClose();VW.dead=false;fails=0;
-            if(!(await vOpen())||!(await vreq([0x10,0x89]))){vstep('Could not reopen',false);break;}i-=VW.lastFails||1;}}
+            VW.lastFails=fails;vstep('Channel dropped at group '+g+', pausing 8 s, then reopening');await new Promise(r=>setTimeout(r,8000));VW.reopening=true;await vClose();VW.dead=false;fails=0;
+            {const ok=(await vOpen())&&(await vreq([0x10,0x89]));VW.reopening=false;if(!ok){vstep('Could not reopen',false);break;}}i-=VW.lastFails||1;}}
         await vKeep();}
       vstep(`${good} of ${groups.length} groups answered${VW.retx?`, ${VW.retx} repeated packets (our acknowledgements were late)`:''}`,good>0);
       await vClose();
@@ -1354,6 +1354,9 @@ if(!navigator.serial){$('transportSel').querySelector('[value=serial]').disabled
 $('transportSel').onchange=()=>{if(connected){wantConnected=false;dropLink();}setTransport($('transportSel').value);log('Connection type: '+transport);};
 $('btnRec').onclick=endTripNow;
 $('btnDtc').onclick=readDtc;
+$('btnSendLog').onclick=async()=>{const b=$('btnSendLog');if(!gh.token){b.textContent='No GitHub key';return;}b.textContent='Sending…';
+  try{await ghPut(`logs/${tripId()}.txt`,logLines.join('\n')+(VW.log.length?'\n\n--- VW lab ---\n'+VW.log.join('\n'):''),'App log');b.textContent='Sent ✓';}catch(e){b.textContent='Failed: '+e.message;}
+  setTimeout(()=>b.textContent='Send log to Claude',4000);};
 $('btnVwTest').onclick=()=>vRun('test');$('btnVwScan').onclick=()=>vRun('scan');
 // Drive mode: the big cockpit, full screen. Leaving full screen (back gesture or ✕) brings you home.
 let driving=false;
