@@ -287,7 +287,7 @@ body.drive-full .tile{min-height:0}
 </div>
 <div class="app">
   <header class="top">
-    <div class="brand"><span class="mark">Golfozaur <b>3000</b></span><small>1.9 TDI BLS · v44</small></div>
+    <div class="brand"><span class="mark">Golfozaur <b>3000</b></span><small>1.9 TDI BLS · v45</small></div>
     <div class="chips">
       <span class="chip rec" id="chipRec" hidden>REC</span>
       <span class="chip" id="chipSrc" hidden>VW</span>
@@ -706,7 +706,7 @@ async function openLinkInner(){
   await initElm();
 }
 function onDisconnect(){
-  connected=false;$('chipHz').hidden=true;chip('chipBt',parkedSince?'Car parked':'Adapter lost',parkedSince?'':'warn');$('btnConnect').textContent='Connect adapter';$('btnDtc').disabled=true;
+  connected=false;VWL.live=false;VWL.fellBack=false;vwWait=false;obdLive=false;VW.open=false;$('chipHz').hidden=true;chip('chipBt',parkedSince?'Car parked':'Adapter lost',parkedSince?'':'warn');$('btnConnect').textContent='Connect adapter';$('btnDtc').disabled=true;
   log('Adapter disconnected');
   for(const k in live)delete live[k];
   if(wantConnected)scheduleReconnect();
@@ -861,8 +861,9 @@ function noteStart(){
   if(vbuf.length<5){vbuf=[];return;}
   const first=vbuf.slice(0,5).map(x=>x.v).sort((a,b)=>a-b),restV=first[2];
   const crank=vbuf.filter(x=>now-x.t<20000);const crankV=crank.length?Math.min(...crank.map(x=>x.v)):null;
-  // 19 Nov: the engine had been running for a minute before the app noticed, and it filed "14.3 V at rest". Never again:
-  if(now-vbuf[vbuf.length-1].t>5000||crankV==null||restV>13.4||crankV>=restV){log('Start not recorded (readings don\'t cover the start)');vbuf=[];return;}
+  // 19 Nov: the engine had been running for a minute before the app noticed, and it filed "14.3 V at rest". Never again.
+  // 21 Nov: a real start pulls the battery down by well over 1 V (the starter); surface charge after parking doesn't.
+  if(now-vbuf[vbuf.length-1].t>5000||crankV==null||restV>13.4||restV-crankV<1.0){log('Start not recorded (readings don\'t cover the start)');vbuf=[];return;}
   const keyOn=vbuf.find(x=>x.v<restV-0.3);
   pendingStart={at:now,restV,crankV,keyS:keyOn?Math.round((now-keyOn.t)/1000):null,n:vbuf.length};
   log(`Start: battery ${restV} V at rest, ${crankV??'?'} V lowest while cranking`);
@@ -890,7 +891,7 @@ async function poll(){
       // properly, with time to answer. A probe every 20 s covers the case where voltage can't be read.
       if((lateInit&&!isCan)||vwWait){
         const nowT=Date.now(),last2=vbuf.filter(x=>nowT-x.t<2000);
-        const charging=last2.length>=5&&last2.every(x=>x.v>=13.3);
+        const charging=last2.length>=5&&last2.every(x=>x.v>=13.5);
         lateProbe=lateProbe||performance.now();
         if(charging||(last2.length<5&&performance.now()-lateProbe>20000)){   // probe only if the battery can't be read
           if(charging&&waitStart){noteStart();waitStart=false;}
@@ -907,7 +908,7 @@ async function poll(){
       expireStale();tick();
       if(stopped()){
         waitStart=true;
-        if(silent()&&!((live.volt??0)>=13.3)){offSince=offSince??performance.now();
+        if(silent()&&!((live.volt??0)>=13.5)){offSince=offSince??performance.now();
           // ECU silent for a minute and a half: stop talking so the adapter can go to sleep and spare the battery.
           if(performance.now()-offSince>90000){log('Engine off for 90 s: releasing the adapter so it can sleep');parkedSince=Date.now();offSince=null;waitStart=false;vbuf=[];dropLink();return;}}
         else offSince=null;
@@ -963,17 +964,19 @@ function derive(now){
   else{ if(live.map!=null&&live.rpm!=null&&live.rpm<50)mapAtRest=live.map;
         if(mapAtRest!=null)baroBase=mapAtRest;
         else if(live.map!=null&&(live.rpm??0)>500&&(live.rpm??0)<1000&&(live.load??100)<30)baroBase=baroBase==null?live.map:Math.min(baroBase,live.map); }
-  if(live.map!=null)live.boost=Math.max(-0.2,(live.map-(baroBase??99))/100);
+  if(live.map!=null)live.boost=Math.max(-0.2,(live.map-(baroBase??99))/100);else delete live.boost;
   if(weather.t!=null)live.ambient=weather.t;
   // fuel: use ECU fuel rate if reported, else load × rpm estimate
   if(live.fuelrate!=null&&(supported.has('5E')||VWL.live))live.lph=live.fuelrate;
   else if(live.rpm!=null&&live.load!=null)live.lph=(live.rpm>300?live.load/100*live.rpm*FUEL_K:0)*calib;
+  else{delete live.lph;delete live.l100;delete live.hp;}
   if(live.lph!=null){
     live.l100=(live.speed??0)>3?live.lph/live.speed*100:null;
     const kw=live.lph*DIESEL_DENS/3600*LHV*1000*EFF;   // L/h → kg/s × MJ/kg → kW
     live.hp=kw*1.341;
   }
   // Acceleration over a 1.5 s window: speed comes in whole km/h, so short windows turn rounding into fake g-forces.
+  if(live.speed==null)delete live.accg;
   if(live.speed!=null&&fresh.speed===spdT0){}else if(live.speed!=null){spdHist.push([now,live.speed]);spdT0=fresh.speed;while(spdHist.length>2&&now-spdHist[1][0]>1500)spdHist.shift();
     const [t0,v0]=spdHist[0];const dt=(now-t0)/1000;if(dt>=1)live.accg=(live.speed-v0)/3.6/dt/9.81;}
 }
@@ -987,13 +990,18 @@ function newTrip(isDemo){return {id:tripId(),start:Date.now(),last:Date.now(),bu
 const PAUSE_MAX=15*60000;
 let paused=null,pausedAt=null;
 // Engine on → trip runs. Engine off → pause. Back within 15 min → same trip. Otherwise it closes.
+let lastRunAt=0;
 function tripAuto(){
-  const engineOn=live.rpm!=null&&live.rpm>300;
+  // 21 Nov: a dropped VW channel (or a 15 s fault-code read) made rpm vanish for a while, and the trip "paused, engine off"
+  // in the middle of a drive. Now: no rpm, but the alternator still charging and the engine seen in the last minute = a data gap.
+  if(live.rpm!=null&&live.rpm>300)lastRunAt=Date.now();
+  const gap=live.rpm==null&&connected&&(live.volt??0)>=13.5&&Date.now()-lastRunAt<60000;
+  const engineOn=(live.rpm!=null&&live.rpm>300)||gap;
   if(engineOn&&!rec){
     if(paused&&Date.now()-pausedAt<PAUSE_MAX){rec=paused;paused=null;rec.last=Date.now();rec.stops++;if(pendingStart){(rec.starts=rec.starts||[]).push(pendingStart);pendingStart=null;}log('Trip resumed '+rec.id);renderTripState(true);}
     else{if(paused)closeTrip(paused);paused=null;rec=newTrip(demo);if(pendingStart&&Date.now()-pendingStart.at<60000){rec.starts=[pendingStart];}pendingStart=null;log('Trip started '+rec.id);renderTripState(true);}
   }else if(!engineOn&&rec){
-    const t=rec;rec=null;paused=t;pausedAt=Date.now();flushChunk(t);log('Trip paused, engine off');renderTripState(true);
+    const t=rec;rec=null;paused=t;pausedAt=Date.now();flushChunk(t);saveTripLog(t);log('Trip paused, engine off');renderTripState(true);
   }
   if(paused&&Date.now()-pausedAt>=PAUSE_MAX){closeTrip(paused);paused=null;}
   renderTripState();
@@ -1010,8 +1018,10 @@ function renderTripState(force){
 }
 function sampleTrip(now){
   if(!rec)return;if(now-rec.last<500)return;const dt=Math.min(3,(now-rec.last)/1000);rec.last=now;
-  const sp=live.speed;
+  const gpsSp=gps.speed!=null&&gps.at&&performance.now()-gps.at<4000?gps.speed:null;
+  const sp=live.speed??gpsSp;   // during a data gap the phone's GPS keeps the distance going
   if(sp!=null)rec.km+=sp*dt/3600;
+  if(VWL.live)rec.vwS=(rec.vwS||0)+dt;
   if(live.lph!=null)rec.fuel+=live.lph*dt/3600;
   rec.engineS+=dt;
   const rpm=live.rpm??0;
@@ -1031,13 +1041,17 @@ function sampleTrip(now){
 function flushChunk(t){t=t||rec;if(!t)return Promise.resolve();if(t.demo){t.buf=[];return Promise.resolve();}
   const rows=t.buf;t.buf=[];const save=()=>put('trips',{...summary(t),open:true});
   return rows.length?put('chunks',{trip:t.id,i:t.chunk++,rows}).then(save):save();}
-const KEEP=['starts','minVolt','lugS','km','fuel','idleS','hotS','engineS','stops','maxRpm','maxBoost','maxSpeed','maxCoolant','warm80','coolStart','chunk','n','spark','start','id'];
+const KEEP=['vwS','starts','minVolt','lugS','km','fuel','idleS','hotS','engineS','stops','maxRpm','maxBoost','maxSpeed','maxCoolant','warm80','coolStart','chunk','n','spark','start','id'];
 function summary(t){return {id:t.id,start:t.start,end:t.last||Date.now(),durationS:Math.round(((t.last||Date.now())-t.start)/1000),engineS:Math.round(t.engineS||0),stops:t.stops||0,km:+t.km.toFixed(2),fuelL:+t.fuel.toFixed(3),avgL100:t.km>0.5?+(t.fuel/t.km*100).toFixed(2):null,
   samples:t.n,idleS:Math.round(t.idleS),hotS:Math.round(t.hotS),maxRpm:Math.round(t.maxRpm),maxBoost:+t.maxBoost.toFixed(2),maxSpeed:Math.round(t.maxSpeed),coolantStart:t.coolStart,maxCoolant:t.maxCoolant,warmTo80S:t.warm80,
-  outsideC:weather.t,minVolt:t.minVolt??null,starts:t.starts||[],restV:t.starts?.[0]?.restV??null,crankV:t.starts?.[0]?.crankV??null,lugS:Math.round(t.lugS||0),calib:VWL.used?1:calib,src:VWL.used?'vw':'obd',fields:['t'].concat(FIELDS,EXTRA),supported:[...supported],spark:t.spark,demo:t.demo,state:Object.fromEntries(KEEP.map(k=>[k,t[k]]))};}
+  outsideC:weather.t,minVolt:t.minVolt??null,starts:t.starts||[],restV:t.starts?.[0]?.restV??null,crankV:t.starts?.[0]?.crankV??null,lugS:Math.round(t.lugS||0),calib:(t.vwS||0)>(t.engineS||0)/2?1:calib,src:(t.vwS||0)>(t.engineS||0)/2?'vw':'obd',fields:['t'].concat(FIELDS,EXTRA),supported:[...supported],spark:t.spark,demo:t.demo,state:Object.fromEntries(KEEP.map(k=>[k,t[k]]))};}
 const demoTrips=[];
+function saveTripLog(t){try{const txt=logLines.join('\n')+(VW.log.length?'\n\n--- VW ---\n'+VW.log.slice(-1500).join('\n'):'');
+  store('golf-log-'+t.id,txt.slice(-400000));
+  // keep only the 3 newest
+  const ks=Object.keys(localStorage).filter(k=>k.startsWith('golf-log-')).sort();ks.slice(0,-3).forEach(k=>localStorage.removeItem(k));}catch(e){}}
 async function closeTrip(t){
-  if(!t)return;await flushChunk(t);const s=summary(t);s.open=false;
+  if(!t)return;if(!t.demo&&recall('golf-log-'+t.id)==null)saveTripLog(t);await flushChunk(t);const s=summary(t);s.open=false;
   if(t.demo)demoTrips.unshift(s);else await put('trips',s);
   log(`Trip closed: ${s.km} km`);renderTrips();renderHome();
   if(!t.demo)syncPending();
@@ -1061,7 +1075,7 @@ async function syncTrip(t){
   await ghPut(`${dir}/${t.id}.csv`,csv,`Trip ${t.id}: ${t.km} km`);
   await ghPut(`${dir}/${t.id}.json`,JSON.stringify(meta,null,1),`Trip ${t.id} summary`);
   // The app's log goes with every recent trip, so Claude can see what happened without anyone pressing a button.
-  if(Date.now()-(t.end||t.last||0)<3*3600e3){try{await ghPut(`${dir}/${t.id}.log.txt`,logLines.join('\n')+(VW.log.length?'\n\n--- VW ---\n'+VW.log.slice(-4000).join('\n'):''),`Trip ${t.id} log`);}catch(e){log('Log upload: '+e.message);}}
+  {const lg=recall('golf-log-'+t.id);if(lg){try{await ghPut(`${dir}/${t.id}.log.txt`,lg,`Trip ${t.id} log`);try{localStorage.removeItem('golf-log-'+t.id);}catch(e){}}catch(e){log('Log upload: '+e.message);}}}
   t.synced=true;await put('trips',t);
 }
 async function syncPending(force){
@@ -1322,8 +1336,14 @@ async function fuelLegs(trips){
     const inLeg=trips.filter(x=>x.start>=a.at&&x.start<b.at);
     const appKm=inLeg.reduce((s,x)=>s+(x.km||0),0);
     const km=(a.odo&&b.odo&&b.odo>a.odo)?b.odo-a.odo:appKm;
-    const rawEst=inLeg.reduce((s,x)=>s+(x.fuelL||0)/(x.calib||1),0);
-    legs.push({to:b.id,km,src:(a.odo&&b.odo)?'odometer':'app',l100:km>0?b.litres/km*100:null,leiKm:km>0?b.lei/km:null,suggest:rawEst>1&&appKm>20?b.litres/rawEst*(appKm/km||1):null});
+    // OBD trips: estimated fuel, which the correction factor tunes. VW trips: fuel measured by the engine computer, which the pump checks.
+    const obd=inLeg.filter(x=>x.src!=='vw'),vw=inLeg.filter(x=>x.src==='vw');
+    const obdKm=obd.reduce((s,x)=>s+(x.km||0),0),vwKm=vw.reduce((s,x)=>s+(x.km||0),0);
+    const rawEst=obd.reduce((s,x)=>s+(x.fuelL||0)/(x.calib||1),0),vwFuel=vw.reduce((s,x)=>s+(x.fuelL||0),0);
+    const l100=km>0?b.litres/km*100:null;
+    legs.push({to:b.id,km,src:(a.odo&&b.odo)?'odometer':'app',l100,leiKm:km>0?b.lei/km:null,
+      suggest:rawEst>1&&obdKm>20&&obdKm>=appKm*0.8?b.litres/rawEst*(appKm/km||1):null,
+      ecuL100:vwFuel>1&&vwKm>20&&vwKm>=appKm*0.8?vwFuel/vwKm*100:null});
   }
   return {fills,legs};
 }
@@ -1337,7 +1357,7 @@ async function renderFuel(trips){
   const byTo=Object.fromEntries(legs.map(l=>[l.to,l]));
   $('fills').innerHTML=(sug&&Math.abs(sug.suggest-calib)>0.03?`<div class="callout"><span style="flex:1 1 200px">Your fill-ups suggest a correction of <b>${sug.suggest.toFixed(2)}</b> for the OBD fuel estimate (now ${calib.toFixed(2)}).</span><button class="btn sm" id="btnApplyCal" type="button">Apply</button></div>`:'')+
     (fills.length?[...fills].reverse().map(f=>{const l=byTo[f.id];return `<div class="fill"><div><b>${new Date(f.at).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})}</b> <span class="meta">· ${f.litres} L · ${f.lei} lei · ${(f.lei/f.litres).toFixed(2)} lei/L${f.odo?' · '+f.odo+' km':''}${f.full?'':' · not full'}</span>
-      ${l&&l.l100!=null?`<div class="meta">${l.km.toFixed(0)} km since previous (${l.src}) · ${(l.leiKm*100).toFixed(0)} lei/100 km</div>`:'<div class="meta">The next full fill-up will give the consumption for this tank.</div>'}</div>
+      ${l&&l.l100!=null?`<div class="meta">${l.km.toFixed(0)} km since previous (${l.src}) · ${(l.leiKm*100).toFixed(0)} lei/100 km</div>`+(l.ecuL100!=null?`<div class="meta">Engine computer said ${l.ecuL100.toFixed(1)} L/100 · pump says ${l.l100.toFixed(1)} · ECU reads ${Math.abs(l.ecuL100/l.l100*100-100).toFixed(0)}% ${l.ecuL100<l.l100?'low':'high'}</div>`:''):'<div class="meta">The next full fill-up will give the consumption for this tank.</div>'}</div>
       <div class="res">${l&&l.l100!=null?l.l100.toFixed(1)+'<span class="meta"> L/100</span>':''}</div><button class="btn sm ghost" type="button" data-delfill="${f.id}">Delete</button></div>`;}).join(''):'<p class="muted small">Log each fill-up: litres, lei, and the odometer if you can. From the second full tank on, you get your real consumption and cost.</p>');
   $('btnApplyCal')&&($('btnApplyCal').onclick=()=>{calib=+sug.suggest.toFixed(2);store('golf-calib',String(calib));$('calib').value=calib.toFixed(2);renderHome();});
   document.querySelectorAll('[data-delfill]').forEach(b=>b.onclick=async()=>{if(b.dataset.armed){await delRec('fills',b.dataset.delfill);syncFills();renderHome();}else{b.dataset.armed='1';b.textContent='Tap again to delete';}});
@@ -1517,10 +1537,12 @@ async function vwStart(){
 async function vwLost(gen){
   VWL.live=false;VW.open=false;log('VW mode: the engine computer dropped the channel');
   const v=await readVoltage();
-  if(v!=null&&v<13.0){log('VW mode: engine off ('+v+' V). Waiting for the next start.');vwWait=true;lateProbe=0;poll();return false;}
+  const off=()=>{log('VW mode: engine off. Waiting for the next start.');vwWait=true;lateProbe=0;poll();return false;};
+  if(v!=null&&v<13.5)return off();
   const t0=performance.now();
   for(let a=0;a<4&&connected&&gen===pollGen;a++){
-    if(a)await new Promise(r=>setTimeout(r,8000));
+    if(a){for(let i=0;i<8&&gen===pollGen;i++){await new Promise(r=>setTimeout(r,1000));expireStale();tick();}   // keep the trip (GPS distance) and screen going while we wait
+      const v2=await readVoltage();if(v2!=null&&v2<13.5)return off();}
     if(gen!==pollGen)return false;
     if(await vOpen(2)){const s=await vreq([0x10,0x89]);if(s&&s[0]===0x50){log('VW mode: back after '+Math.round((performance.now()-t0)/1000)+' s');VWL.live=true;return true;}}
     await vClose();VW.open=false;
