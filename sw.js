@@ -1,6 +1,6 @@
 // Always get the newest file. GitHub's CDN can hand out a copy up to 10 minutes old even when asked not to,
 // so every request carries a unique ?_= that the CDN has never seen. Offline, fall back to the saved copy.
-const C='golf-logbook-v40';
+const C='golf-logbook-v41';
 const FILES=['./','index.html','manifest.webmanifest','icon-192.png','icon-512.png'];
 const fresh=u=>fetch(u+(u.includes('?')?'&':'?')+'_='+Date.now(),{cache:'no-store'});
 self.addEventListener('install',e=>{self.skipWaiting();

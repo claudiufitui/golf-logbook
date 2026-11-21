@@ -188,7 +188,7 @@ input[type=number]{background:var(--panel2);border:1px solid var(--line);color:v
 </div>
 <div class="app">
   <div class="top">
-    <div class="brand">Golfozaur 3000<small>1.9 TDI BLS · v40</small></div>
+    <div class="brand">Golfozaur 3000<small>1.9 TDI BLS · v41</small></div>
     <div class="chips">
       <span class="chip" id="chipBt">Adapter off</span>
       <span class="chip" id="chipGps">GPS off</span>
@@ -647,9 +647,9 @@ function payload(r,mode,pid){
     const hex=L.slice(i+want.length);const out=[];for(let j=0;j+1<hex.length;j+=2)out.push(parseInt(hex.slice(j,j+2),16));if(out.length&&!out.some(isNaN))return out;}
   return null;
 }
-let lateInit=false;
+let lateInit=false,lateProbe=0;
 // The rest of the setup, once the ECU answers (after connecting with the ignition off).
-async function finishInit(){lateInit=false;const first=await cmd('0100',protoOk?4000:12000);log('0100 → '+clean(first));if(!payload(first,'41','00')){lateInit=true;return;}
+async function finishInit(){lateInit=false;const first=await cmd('0100',protoOk?(isCan?4000:6000):12000);log('0100 → '+clean(first));if(!payload(first,'41','00')){lateInit=true;return;}
   {const dp=await cmd('ATDPN');const n=(dp||'').replace(/[^0-9A-C]/gi,'').slice(-1).toUpperCase();if(/^[1-9A-C]$/.test(n)){store('golf-proto',n);isCan=['6','7','8','9','A','B','C'].includes(n);protoOk=true;}}
   const t0=performance.now();const a=await cmd('010C1',1500);suffix=payload(a,'41','0C')?'1':'';store('golf-suffix',suffix);log('Single-answer mode '+(suffix?'on':'off')+' ('+Math.round(performance.now()-t0)+' ms)');
   await readSupported(first);await readVehicle();}
@@ -761,7 +761,20 @@ async function poll(){
     // dip when you turn the key (glow plugs, then the starter) is caught.
     const silent=()=>fresh.rpm==null||performance.now()-fresh.rpm>6000, stopped=()=>silent()||(live.rpm??0)<300;
     if(stopped()){
-      await readPid('0C');
+      // 21 Nov: on this car OBD runs over the K-line, whose wake-up takes ~3 s. Asking for rpm with a 1.2 s timeout
+      // cut every wake-up short, so the app never noticed the engine had started. Now, while waiting for the start,
+      // the battery decides: alternator voltage (13.3 V+) for 2 s means the engine runs; then the K-line gets woken
+      // properly, with time to answer. A probe every 20 s covers the case where voltage can't be read.
+      if(lateInit&&!isCan){
+        const nowT=Date.now(),last2=vbuf.filter(x=>nowT-x.t<2000);
+        const charging=last2.length>=5&&last2.every(x=>x.v>=13.3);
+        lateProbe=lateProbe||performance.now();
+        if(charging||performance.now()-lateProbe>20000){
+          if(charging&&waitStart){noteStart();waitStart=false;}
+          lateProbe=performance.now();log(charging?'Battery shows the alternator charging: engine running, waking the ECU':'Checking whether the ECU answers yet');
+          await finishInit();if(!lateInit){lateProbe=0;return poll();}
+        }
+      }else await readPid('0C');
       if(!stopped()){if(waitStart)noteStart();waitStart=false;}
       if(lateInit&&!stopped()){await finishInit();return poll();}   // only after the start, so the crank dip is caught first
       expireStale();tick();
@@ -1305,6 +1318,10 @@ async function vRun(kind){
   if(VW.busy)return;if(!connected){$('vwSteps').textContent='Connect to the adapter first, with the engine idling.';return;}
   VW.busy=true;VW.steps=[];VW.log=[];VW.retx=0;VW.dead=false;$('btnVwTest').disabled=$('btnVwScan').disabled=true;
   pollGen++;await new Promise(r=>setTimeout(r,600));   // stop normal polling
+  // 21 Nov: every run that came right after normal OBD reading had the ECU refuse the channel for ~5 s, then accept;
+  // the run made before OBD had ever woken up got in at once. OBD on this car is a K-line session, and it lives
+  // 5 s after the last question (KWP2000 P3max). So: close it and let it expire before asking for the CAN channel.
+  if(!isCan&&!lateInit){await cmd('ATPC',1500);vstep('Letting the normal OBD session end (5 s)');await new Promise(r=>setTimeout(r,5500));}
   vstep(kind==='scan'?'Full scan: groups 1 to 255':'Connection test');
   let opened=false;
   try{
