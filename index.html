@@ -188,7 +188,7 @@ input[type=number]{background:var(--panel2);border:1px solid var(--line);color:v
 </div>
 <div class="app">
   <div class="top">
-    <div class="brand">Golfozaur 3000<small>1.9 TDI BLS · v41</small></div>
+    <div class="brand">Golfozaur 3000<small>1.9 TDI BLS · v42</small></div>
     <div class="chips">
       <span class="chip" id="chipBt">Adapter off</span>
       <span class="chip" id="chipGps">GPS off</span>
@@ -330,6 +330,8 @@ input[type=number]{background:var(--panel2);border:1px solid var(--line);color:v
         <h2>Connection</h2>
         <div class="row" style="margin-bottom:6px"><label class="field" for="transportSel">How to talk to the adapter
           <select id="transportSel"><option value="serial">Bluetooth classic (Android-Vlink)</option><option value="ble">Bluetooth LE (IOS-Vlink)</option></select></label></div>
+        <div class="row" style="margin-bottom:6px"><label class="field" for="srcSel">Engine data
+          <select id="srcSel"><option value="vw">VW direct, from the engine computer (falls back to OBD)</option><option value="obd">Standard OBD</option></select></label></div>
         <p class="small muted" id="transportHint">Classic is the adapter’s Android mode and usually the most reliable. Pair “Android-Vlink” once in your phone’s Bluetooth settings with PIN 1234, then tap Connect.</p>
       </div>
       <div class="panel">
@@ -648,11 +650,14 @@ function payload(r,mode,pid){
   return null;
 }
 let lateInit=false,lateProbe=0;
+// VW mode: read the engine computer directly (TP 2.0 on CAN) instead of standard OBD on the K-line.
+let src=recall('golf-src')||'vw',vwWait=false,obdLive=false;
+const VWL={live:false,fellBack:false,used:false};
 // The rest of the setup, once the ECU answers (after connecting with the ignition off).
 async function finishInit(){lateInit=false;const first=await cmd('0100',protoOk?(isCan?4000:6000):12000);log('0100 → '+clean(first));if(!payload(first,'41','00')){lateInit=true;return;}
   {const dp=await cmd('ATDPN');const n=(dp||'').replace(/[^0-9A-C]/gi,'').slice(-1).toUpperCase();if(/^[1-9A-C]$/.test(n)){store('golf-proto',n);isCan=['6','7','8','9','A','B','C'].includes(n);protoOk=true;}}
   const t0=performance.now();const a=await cmd('010C1',1500);suffix=payload(a,'41','0C')?'1':'';store('golf-suffix',suffix);log('Single-answer mode '+(suffix?'on':'off')+' ('+Math.round(performance.now()-t0)+' ms)');
-  await readSupported(first);await readVehicle();}
+  await readSupported(first);await readVehicle();obdLive=true;}
 async function initElm(){
   if(parkedSince){
     const v=await cmd('ATRV',1500);const m=(v||'').match(/(\d+(\.\d+)?)\s*V/i);const volts=m?parseFloat(m[1]):null;
@@ -660,6 +665,15 @@ async function initElm(){
     log('Peek: '+(volts??'?')+' V, engine running again.');parkedSince=null;
   }
   let savedProto=recall('golf-proto');if(!/^[1-9A-C]$/i.test(savedProto||''))savedProto=null;
+  VWL.used=false;VWL.live=false;
+  if(src==='vw'&&!VWL.fellBack){
+    // VW mode never touches the K-line: an open OBD session there makes the engine refuse the CAN channel.
+    if(obdLive){await cmd('ATPC',1500);log('VW mode: letting the OBD session end (5 s)');await new Promise(r=>setTimeout(r,5500));}
+    for(const s of ['ATWS','ATE0','ATL0','ATS0']){const r=await cmd(s,s==='ATWS'?3000:1500);log(s+' → '+clean(r));}
+    obdLive=false;lateInit=false;vwWait=true;lateProbe=0;supported=new Set();
+    isCan=savedProto?['6','7','8','9','A','B','C'].includes(savedProto):false;
+    log('VW mode: reading the engine computer directly. Waiting for the engine to run (watching the battery).');
+    $('btnDtc').disabled=false;startGps();keepAwake();if(!demo)poll();return;}
   for(const s of ['ATWS','ATE0','ATL0','ATS0','ATH0','ATAT2',savedProto?'ATSP'+savedProto:'ATSP0']){const r=await cmd(s,s==='ATWS'?3000:1500);log(s+' → '+clean(r));}
   let first=await cmd('0100',savedProto?4000:12000);log('0100 → '+clean(first));
   // Ignition still off (you connect before turning the key): don't go searching for a protocol, which takes
@@ -677,7 +691,7 @@ async function initElm(){
   const t0=performance.now();const a=await cmd('010C1',1500);const fastOk=!!payload(a,'41','0C');
   suffix=fastOk?'1':'';store('golf-suffix',suffix);log('Single-answer mode '+(fastOk?'on':'off')+' ('+Math.round(performance.now()-t0)+' ms)');
   await readSupported(first);
-  await readVehicle();
+  await readVehicle();obdLive=true;
   $('btnDtc').disabled=false;
   startGps();keepAwake();
   if(!demo)poll();
@@ -765,14 +779,18 @@ async function poll(){
       // cut every wake-up short, so the app never noticed the engine had started. Now, while waiting for the start,
       // the battery decides: alternator voltage (13.3 V+) for 2 s means the engine runs; then the K-line gets woken
       // properly, with time to answer. A probe every 20 s covers the case where voltage can't be read.
-      if(lateInit&&!isCan){
+      if((lateInit&&!isCan)||vwWait){
         const nowT=Date.now(),last2=vbuf.filter(x=>nowT-x.t<2000);
         const charging=last2.length>=5&&last2.every(x=>x.v>=13.3);
         lateProbe=lateProbe||performance.now();
-        if(charging||performance.now()-lateProbe>20000){
+        if(charging||(last2.length<5&&performance.now()-lateProbe>20000)){   // probe only if the battery can't be read
           if(charging&&waitStart){noteStart();waitStart=false;}
           lateProbe=performance.now();log(charging?'Battery shows the alternator charging: engine running, waking the ECU':'Checking whether the ECU answers yet');
-          await finishInit();if(!lateInit){lateProbe=0;return poll();}
+          if(vwWait){const r=await vwStart();if(gen!==pollGen)return;
+            if(r==='ok'){vwWait=false;lateProbe=0;return vwPoll();}
+            if(r==='fail'){log('VW mode: the engine computer would not open a channel. Standard OBD for this drive.');VWL.fellBack=true;vwWait=false;return initElm();}
+            lateProbe=performance.now();}
+          else{await finishInit();if(!lateInit){lateProbe=0;return poll();}}
         }
       }else await readPid('0C');
       if(!stopped()){if(waitStart)noteStart();waitStart=false;}
@@ -780,7 +798,7 @@ async function poll(){
       expireStale();tick();
       if(stopped()){
         waitStart=true;
-        if(silent()){offSince=offSince??performance.now();
+        if(silent()&&!((live.volt??0)>=13.3)){offSince=offSince??performance.now();
           // ECU silent for a minute and a half: stop talking so the adapter can go to sleep and spare the battery.
           if(performance.now()-offSince>90000){log('Engine off for 90 s: releasing the adapter so it can sleep');parkedSince=Date.now();offSince=null;waitStart=false;vbuf=[];dropLink();return;}}
         else offSince=null;
@@ -801,12 +819,24 @@ async function poll(){
   }
 }
 // A value the ECU hasn't confirmed for a while is dropped instead of repeated.
-function expireStale(){const now=performance.now();for(const k in fresh){const max=['rpm','speed','map','load','maf'].includes(k)?4000:30000;if(now-fresh[k]>max){delete live[k];delete fresh[k];}}}
+function expireStale(){const now=performance.now();for(const k in fresh){const max=['rpm','speed','map','load','maf','torque'].includes(k)?(VWL.live?8000:4000):30000;if(now-fresh[k]>max){delete live[k];delete fresh[k];}}}
 
 // =============== fault codes ===============
 function parseDtc(r,mode){const codes=[];for(let l of lines(r)){const L=l.toUpperCase();const i=L.indexOf(mode);if(i<0)continue;let h=L.slice(i+2);if(isCan)h=h.slice(2);
   for(let j=0;j+3<h.length;j+=4){const c=h.slice(j,j+4);if(c==='0000')continue;const a=parseInt(c.slice(0,2),16);codes.push('PCBU'[a>>6]+((a>>4)&3)+c.slice(1));}}return [...new Set(codes)];}
 async function readDtc(){
+  if(VWL.live||vwWait){
+    // Fault codes come through standard OBD: pause VW reading, ask, let the OBD session end, then go back to VW.
+    $('dtcOut').textContent='Reading (pausing VW mode for ~15 s)…';pollGen++;await new Promise(r=>setTimeout(r,500));
+    if(VW.open){await vClose();VW.open=false;}VWL.live=false;vwWait=false;
+    const pr=recall('golf-proto')||'0';
+    for(const c of ['ATWS','ATE0','ATL0','ATS0','ATH0','ATAT2','ATSP'+pr])await cmd(c,c==='ATWS'?3000:1500);
+    const f=await cmd('0100',8000);log('0100 → '+clean(f));
+    if(payload(f,'41','00'))await readDtcObd();else $('dtcOut').textContent='No answer from the ECU over OBD. Try with the ignition on.';
+    await cmd('ATPC',1500);obdLive=false;await new Promise(r=>setTimeout(r,5500));
+    if(connected)initElm();return;}
+  return readDtcObd();}
+async function readDtcObd(){
   $('dtcOut').textContent='Reading…';
   const r3=await cmd('03',5000);log('03 → '+clean(r3));const r7=await cmd('07',5000);log('07 → '+clean(r7));
   if(r3==null){$('dtcOut').textContent='No answer from the ECU. Try with the ignition on.';return;}
@@ -827,7 +857,7 @@ function derive(now){
   if(live.map!=null)live.boost=Math.max(-0.2,(live.map-(baroBase??99))/100);
   if(weather.t!=null)live.ambient=weather.t;
   // fuel: use ECU fuel rate if reported, else load × rpm estimate
-  if(live.fuelrate!=null&&supported.has('5E'))live.lph=live.fuelrate;
+  if(live.fuelrate!=null&&(supported.has('5E')||VWL.live))live.lph=live.fuelrate;
   else if(live.rpm!=null&&live.load!=null)live.lph=(live.rpm>300?live.load/100*live.rpm*FUEL_K:0)*calib;
   if(live.lph!=null){
     live.l100=(live.speed??0)>3?live.lph/live.speed*100:null;
@@ -840,7 +870,7 @@ function derive(now){
 }
 
 // =============== trips ===============
-const FIELDS=['gear','shift','rpm','speed','coolant','map','boost','load','maf','iat','throttle','volt','lambda','rail','egrcmd','ambient','oil','fuellvl','lph','l100','hp','accg'];
+const FIELDS=['gear','shift','rpm','speed','coolant','map','boost','load','maf','iat','throttle','volt','lambda','rail','egrcmd','ambient','oil','fuellvl','lph','l100','hp','accg','torque','boostSpec','n75','airSpec','airAct','pedal','fuelT','egt','dpf','radT'];
 const EXTRA=['lat','lon','alt','gpsSpeed','heading','ax','ay','az'];
 const CHUNK=60;
 function tripId(){const d=new Date();const p=n=>String(n).padStart(2,'0');return `${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;}
@@ -895,7 +925,7 @@ function flushChunk(t){t=t||rec;if(!t)return Promise.resolve();if(t.demo){t.buf=
 const KEEP=['starts','minVolt','lugS','km','fuel','idleS','hotS','engineS','stops','maxRpm','maxBoost','maxSpeed','maxCoolant','warm80','coolStart','chunk','n','spark','start','id'];
 function summary(t){return {id:t.id,start:t.start,end:t.last||Date.now(),durationS:Math.round(((t.last||Date.now())-t.start)/1000),engineS:Math.round(t.engineS||0),stops:t.stops||0,km:+t.km.toFixed(2),fuelL:+t.fuel.toFixed(3),avgL100:t.km>0.5?+(t.fuel/t.km*100).toFixed(2):null,
   samples:t.n,idleS:Math.round(t.idleS),hotS:Math.round(t.hotS),maxRpm:Math.round(t.maxRpm),maxBoost:+t.maxBoost.toFixed(2),maxSpeed:Math.round(t.maxSpeed),coolantStart:t.coolStart,maxCoolant:t.maxCoolant,warmTo80S:t.warm80,
-  outsideC:weather.t,minVolt:t.minVolt??null,starts:t.starts||[],restV:t.starts?.[0]?.restV??null,crankV:t.starts?.[0]?.crankV??null,lugS:Math.round(t.lugS||0),calib,fields:['t'].concat(FIELDS,EXTRA),supported:[...supported],spark:t.spark,demo:t.demo,state:Object.fromEntries(KEEP.map(k=>[k,t[k]]))};}
+  outsideC:weather.t,minVolt:t.minVolt??null,starts:t.starts||[],restV:t.starts?.[0]?.restV??null,crankV:t.starts?.[0]?.crankV??null,lugS:Math.round(t.lugS||0),calib,src:VWL.used?'vw':'obd',fields:['t'].concat(FIELDS,EXTRA),supported:[...supported],spark:t.spark,demo:t.demo,state:Object.fromEntries(KEEP.map(k=>[k,t[k]]))};}
 const demoTrips=[];
 async function closeTrip(t){
   if(!t)return;await flushChunk(t);const s=summary(t);s.open=false;
@@ -1202,7 +1232,7 @@ async function vsend(hex,count,timeout=1500){
   vlog(`> ${hex}${count?' ['+count+']':''}   < ${clean(r)}   ${ms} ms`);VW.lastTx=performance.now();return {r,fr:vframes(r),ms};}
 async function vat(c,t=1500){const r=await cmd(c,t);vlog(c+' → '+clean(r));return clean(r);}
 // Open the channel to the engine ECU.
-async function vOpen(){
+async function vOpen(maxTries=1e9){
   // TP 2.0 frames must go out with their real length (7 bytes for the channel request); padded 8-byte frames are ignored.
   // 19 Nov: ATV1 got the gateway to answer, but the engine ECU closed the channel (A8) on our timing request with T3=5 ms.
   // vag-blocks (proven on PD TDIs) asks for T3=10 ms (4A), so that comes first now. Whatever works is remembered.
@@ -1220,11 +1250,13 @@ async function vOpen(){
   const po=VW.param!=null?[P[VW.param],...P.filter((_,i)=>i!==VW.param)]:P;
   // Close any channel left over from before, politely, so the ECU isn't still holding it.
   if(VW.tx&&VW.open){try{await vsend('A8',0,300);}catch(e){}VW.open=false;}
-  for(const v of vo){
+  let tries=0;
+  outer: for(const v of vo){
     vstep('Trying: '+v.n);
     for(const c of ['ATWS','ATE0','ATL0','ATS0','ATH1',...v.c,'ATCFC0','ATAL','ATAT0','ATST19'])await vat(c,c==='ATWS'?3000:1500);
     let gatewayOk=false;
     for(const pr of po){
+      if(tries++>=maxTries)break outer;
       await vat('ATSH200');
       if((await vat('ATCRA201')).includes('?')){await vat('ATCF201');await vat('ATCM7FF');}
       let ok=null;
@@ -1303,6 +1335,76 @@ async function vGroup(g){
   const raw=[];for(let i=2;i+2<m.length;i+=3)raw.push([m[i],m[i+1],m[i+2]]);
   return {g,raw,dec:raw.slice(0,4).map(vdec)};
 }
+// =============== VW mode: live data from the engine computer ===============
+// Group map from the 19–21 Nov scans of this car (EDC16 03G906021QJ):
+// 15 rpm·torque·fuel l/h · 6 speed · 11 rpm·boost wanted·boost actual·N75 · 3 rpm·air wanted·air actual
+// 7 fuel temp·–·intake air·coolant · 12 …·battery·coolant · 10 air·atmospheric·boost·pedal
+// 68 DPF load · 75 temp before turbo · 62 coolant engine·radiator (thermostat)
+const VW_SEQ=[15,6,11,6,3,6,'S'], VW_SLOW=[7,12,10,'V',68,75,62,'V'];
+const MAX_TQ=250;   // BLS: 250 Nm
+function vwApply(g,raw){
+  const N=i=>{const t=raw[i];if(!t)return null;const f=VWF[t[0]];if(!f)return null;const v=f(t[1],t[2])[0];return typeof v==='number'&&isFinite(v)?v:null;};
+  const S=(k,v)=>{if(v!=null)setLive(k,v);};
+  if(g===15){S('rpm',N(0));const tq=N(1);if(tq!=null){setLive('torque',tq);setLive('load',Math.max(0,Math.min(100,tq/MAX_TQ*100)));}S('fuelrate',N(2));}
+  else if(g===6){const v=N(0);if(v!=null&&v<260)setLive('speed',v);}
+  else if(g===11){S('rpm',N(0));const sp=N(1),ac=N(2);if(ac!=null)setLive('map',ac/10);
+    if(sp!=null)setLive('boostSpec',Math.max(-0.2,(sp/10-(baroBase??99))/100));S('n75',N(3));}
+  else if(g===3){S('rpm',N(0));S('airSpec',N(1));const a=N(2);S('airAct',a);if(a!=null&&live.rpm)setLive('maf',a*live.rpm/30/1000);}
+  else if(g===10){const b=N(1);if(b!=null&&b>700&&b<1100)setLive('baro',b/10);S('pedal',N(3));}
+  else if(g===7){S('fuelT',N(0));S('iat',N(2));S('coolant',N(3));}
+  else if(g===12){S('coolant',N(3));}
+  else if(g===68){S('dpf',N(0));}
+  else if(g===75){S('egt',N(0));}
+  else if(g===62){S('radT',N(1));}
+}
+// Engine running (alternator charging): open the channel. 'off' = gateway silent (ignition off), 'fail' = it wouldn't open.
+async function vwStart(){
+  for(const c of ['ATWS','ATE0','ATL0','ATS0','ATH1','ATSP6','ATCAF0','ATV1','ATCFC0','ATAL','ATAT0','ATST19','ATSH200','ATCRA201'])await vat(c,c==='ATWS'?3000:1500);
+  const {fr}=await vsend('01C00010000301',1,2000);
+  if(!fr.some(x=>x.id===0x201)){log('VW mode: gateway silent (ignition off?)');return 'off';}
+  for(let a=0;a<3&&connected;a++){
+    if(a)await new Promise(r=>setTimeout(r,a===1?3000:8000));
+    if(await vOpen(4)){const s=await vreq([0x10,0x89]);if(s&&s[0]===0x50){
+      log('VW mode: connected to the engine computer');VWL.used=true;
+      const id=(()=>{try{return JSON.parse(recall('golf-vw')||'{}').ecuId;}catch(e){return null;}})();
+      $('vehicle').innerHTML='<dt>Data</dt><dd>VW direct, from the engine computer</dd>'+(id?`<dt>Engine computer</dt><dd class="mono">${id.replace(/</g,'')}</dd>`:'');
+      return 'ok';}
+      await vClose();VW.open=false;}
+  }
+  return 'fail';
+}
+// The channel dropped. Engine off → back to waiting. Otherwise reopen: at once, then with pauses; give up → OBD.
+async function vwLost(gen){
+  VWL.live=false;VW.open=false;log('VW mode: the engine computer dropped the channel');
+  const v=await readVoltage();
+  if(v!=null&&v<13.0){log('VW mode: engine off ('+v+' V). Waiting for the next start.');vwWait=true;lateProbe=0;poll();return false;}
+  const t0=performance.now();
+  for(let a=0;a<4&&connected&&gen===pollGen;a++){
+    if(a)await new Promise(r=>setTimeout(r,8000));
+    if(gen!==pollGen)return false;
+    if(await vOpen(2)){const s=await vreq([0x10,0x89]);if(s&&s[0]===0x50){log('VW mode: back after '+Math.round((performance.now()-t0)/1000)+' s');VWL.live=true;return true;}}
+    await vClose();VW.open=false;
+  }
+  if(gen!==pollGen)return false;
+  log('VW mode: could not get the channel back. Standard OBD for the rest of this drive.');
+  VWL.fellBack=true;initElm();return false;
+}
+async function vwPoll(){
+  const gen=++pollGen;VWL.live=true;VWL.used=true;obdLive=false;
+  let k=0,s=0,miss=0;
+  while(connected&&!demo&&gen===pollGen){
+    let g=VW_SEQ[k++%VW_SEQ.length];if(g==='S')g=VW_SLOW[s++%VW_SLOW.length];
+    const t0=performance.now();
+    if(g==='V')await readVoltage();
+    else{const r=await vGroup(g);if(gen!==pollGen)return;
+      if(r.raw){miss=0;vwApply(g,r.raw);}
+      else if(VW.dead||r.err==='no answer'){if(VW.dead||++miss>=2){VW.dead=false;miss=0;if(!(await vwLost(gen)))return;continue;}}}
+    reqMs=reqMs*0.9+(performance.now()-t0)*0.1;
+    expireStale();tick();
+    replies++;if(performance.now()-hzT>3000){chip('chipHz','VW · '+(replies*1000/(performance.now()-hzT)).toFixed(1)+'/s · '+Math.round(reqMs)+' ms','ok');$('chipHz').hidden=false;replies=0;hzT=performance.now();}
+  }
+  if(gen===pollGen)VWL.live=false;
+}
 function vShow(){
   const rows=Object.values(VW.results).filter(r=>r.raw).sort((a,b)=>a.g-b.g);
   $('vwOut').innerHTML=(VW.ecuId?`<p class="small"><b>ECU:</b> <span class="mono">${VW.ecuId.replace(/</g,'')}</span></p>`:'')+
@@ -1321,7 +1423,7 @@ async function vRun(kind){
   // 21 Nov: every run that came right after normal OBD reading had the ECU refuse the channel for ~5 s, then accept;
   // the run made before OBD had ever woken up got in at once. OBD on this car is a K-line session, and it lives
   // 5 s after the last question (KWP2000 P3max). So: close it and let it expire before asking for the CAN channel.
-  if(!isCan&&!lateInit){await cmd('ATPC',1500);vstep('Letting the normal OBD session end (5 s)');await new Promise(r=>setTimeout(r,5500));}
+  if(obdLive){await cmd('ATPC',1500);vstep('Letting the normal OBD session end (5 s)');await new Promise(r=>setTimeout(r,5500));}
   vstep(kind==='scan'?'Full scan: groups 1 to 255':'Connection test');
   let opened=false;
   try{
@@ -1367,6 +1469,9 @@ async function vRun(kind){
 // =============== wire up ===============
 $('btnConnect').onclick=connect;
 $('transportSel').value=transport;
+$('srcSel').value=src;
+$('srcSel').onchange=async()=>{src=$('srcSel').value;store('golf-src',src);VWL.fellBack=false;log('Engine data: '+(src==='vw'?'VW direct':'standard OBD'));
+  if(connected&&!VW.busy){pollGen++;await new Promise(r=>setTimeout(r,500));if(VW.open){await vClose();VW.open=false;}VWL.live=false;vwWait=false;initElm();}};
 if(!navigator.serial){$('transportSel').querySelector('[value=serial]').disabled=true;$('transportHint').textContent='This browser can’t use classic Bluetooth, so the app uses Bluetooth LE.';}
 $('transportSel').onchange=()=>{if(connected){wantConnected=false;dropLink();}setTransport($('transportSel').value);log('Connection type: '+transport);};
 $('btnRec').onclick=endTripNow;
