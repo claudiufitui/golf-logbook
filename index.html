@@ -287,7 +287,7 @@ body.drive-full .tile{min-height:0}
 </div>
 <div class="app">
   <header class="top">
-    <div class="brand"><span class="mark">Golfozaur <b>3000</b></span><small>1.9 TDI BLS · v47</small></div>
+    <div class="brand"><span class="mark">Golfozaur <b>3000</b></span><small>1.9 TDI BLS · v48</small></div>
     <div class="chips">
       <span class="chip rec" id="chipRec" hidden>REC</span>
       <span class="chip" id="chipSrc" hidden>VW</span>
@@ -920,7 +920,7 @@ async function poll(){
         tick();continue;}
     }
     offSince=null;
-    if(src==='vw'&&VWL.fellBack&&performance.now()-(VWL.fbAt||0)>180000&&(live.rpm??0)>300){
+    if(src==='vw'&&VWL.fellBack&&performance.now()-(VWL.fbAt||0)>180000&&(live.rpm??0)>300){   // fbAt is set 90 s back after a drop, so that's 90 s
       VWL.fbAt=performance.now();log('VW mode: trying again after falling back');
       await cmd('ATPC',1500);obdLive=false;for(let i=0;i<6&&gen===pollGen;i++){await new Promise(r=>setTimeout(r,1000));expireStale();tick();}
       if(gen!==pollGen)return;
@@ -1442,7 +1442,7 @@ async function vOpen(maxTries=1e9){
       if(pr.f)await vat('ATCRA'+rx.toString(16).padStart(3,'0').toUpperCase());else await vat('ATCRA');
       const {fr}=await vsend(pr.a,pr.k);
       const p=fr.find(x=>x.id===rx&&x.b[0]===0xA1);
-      if(p){VW.variant=V.indexOf(v);VW.param=P.indexOf(pr);VW.bs=pr.bs;VW.open=true;VW.mine=pr.a.slice(2);if(!pr.f)await vat('ATCRA'+rx.toString(16).padStart(3,'0').toUpperCase());VW.params=p.b;VW.seq=0;VW.rseq=null;
+      if(p){VW.lastTest=performance.now();VW.variant=V.indexOf(v);VW.param=P.indexOf(pr);VW.bs=pr.bs;VW.open=true;VW.mine=pr.a.slice(2);if(!pr.f)await vat('ATCRA'+rx.toString(16).padStart(3,'0').toUpperCase());VW.params=p.b;VW.seq=0;VW.rseq=null;
         vstep(`Channel open (${v.n}, ${pr.a}${pr.k?' +count':''}${pr.f?'':' unfiltered'}): we send on ${tx.toString(16)}, the ECU answers on ${rx.toString(16)}. ECU timing ${p.b.map(H2).join(' ')}`,true);return true;}
       const hung=fr.some(x=>x.b[0]===0xA8);
       vstep('ECU '+(hung?'closed the channel':'did not answer')+' on '+pr.a+(fr.length?' · saw '+fr.map(x=>x.id.toString(16)+':'+x.b.map(H2).join('')).join(' '):''),false);
@@ -1454,7 +1454,13 @@ async function vOpen(maxTries=1e9){
   }
   vstep('Could not open a channel to the engine',false);return false;
 }
-async function vKeep(){if(performance.now()-(VW.lastTx||0)>400){const {fr}=await vx('A3',1);return fr.some(x=>x.b[0]===0xA1);}return true;}
+// 22 Nov: without a test from us, the engine computer tests us about every 1.1 s. Tests that land while the adapter isn't
+// listening (between two commands) go unanswered, and that's what kept closing the channel. vag-blocks, which works on these
+// engines, sends its own test every 500 ms. So do we: then the engine computer has no reason to ask.
+async function vKeep(){
+  if(performance.now()-(VW.lastTest||0)<450)return true;
+  VW.lastTest=performance.now();VW.ourTests=(VW.ourTests||0)+1;
+  const {fr}=await vx('A3',1,600);return fr.some(x=>x.id===VW.rx&&x.b[0]===0xA1);}
 async function vClose(){try{await vsend('A8',1,800);}catch(e){}}
 // Send one KWP request (≤5 bytes) and collect the answer, acknowledging the ECU's packets.
 // Send one KWP request (≤5 bytes) and collect the answer.
@@ -1473,8 +1479,8 @@ async function vx(hex,count,timeout){
       if(x.id===VW.rx&&x.b[0]===0xA8){VW.dead=true;VW.open=false;}
       out.push(x);}
     if(!tested)break;
-    vlog('(ECU checks we are there: answering)');
-    fr=(await vsend('A1'+(VW.mine||'0F8AFF4AFF'),0,400)).fr;
+    vlog('(ECU checks we are there: answering)');VW.ecuTestAt=performance.now();VW.lastTest=performance.now();VW.ecuTests=(VW.ecuTests||0)+1;
+    await vsend('ATST32',0,800);fr=(await vsend('A3',0,900)).fr;await vsend('ATST19',0,800);
   }
   return {r:res.r,fr:out,ms:res.ms};
 }
@@ -1482,17 +1488,20 @@ async function vreq(pl,nFrames){
   const hx=n=>n.toString(16).toUpperCase();
   const f=[0x10|VW.seq,0,pl.length,...pl];VW.seq=(VW.seq+1)&15;
   // Block size 15: the ECU sends the whole answer in one burst; tell the adapter how many packets to wait for.
-  let {fr}=await vx(f.map(H2).join(''),VW.bs>1&&nFrames?Math.min(15,1+nFrames):2,1500);
+  // A test from the engine computer can land inside an answer and use up one slot of the count, so the adapter stops
+  // listening one packet early. While it's been testing us lately, leave a spare slot.
+  const spare=performance.now()-(VW.ecuTestAt||-1e9)<8000?1:0;
+  let {fr}=await vx(f.map(H2).join(''),VW.bs>1&&nFrames?Math.min(15,1+nFrames+spare):2+spare,1500);
   let data=[],need=null,empty=0;
   for(let round=0;round<60;round++){
-    let ack=null,done=false;
+    let ack=null,done=false,got=false;
     for(const {id,b} of fr){if(id!==VW.rx||!b.length)continue;const op=b[0]>>4,sq=b[0]&15;
       if(op===0xB||op===0x9)continue;
       if(b[0]===0xA8){VW.dead=true;VW.open=false;vlog('ECU closed the channel');await vsend('A8',0,300);return null;}
       if(b[0]===0xA3){vlog('(ECU checks we are there: answering)');await vsend('A1'+(VW.mine||'0F8AFF4AFF'),0,300);continue;}
       if(op>3)continue;
       if(VW.rseq!=null&&sq!==VW.rseq){const back=(VW.rseq-sq+16)&15;if(back>0&&back<8){VW.retx++;vlog('(repeat of packet '+sq+', ignored)');if(op===0||op===1)ack=(sq+1)&15;continue;}vlog('(packet '+sq+' out of order, expected '+VW.rseq+')');}
-      VW.rseq=(sq+1)&15;data.push(...b.slice(1));
+      VW.rseq=(sq+1)&15;data.push(...b.slice(1));got=true;
       if(need==null&&data.length>=2)need=((data[0]&0x0F)<<8)|data[1];   // high nibble = flags (0x80 on "busy")
       if(op===0||op===1)ack=(sq+1)&15;
       if(op===1||op===3)done=true;}
@@ -1503,8 +1512,8 @@ async function vreq(pl,nFrames){
       if(ack!=null)await vx('B'+hx(ack),0,600);
       return msg;}
     if(ack!=null){({fr}=await vx('B'+hx(ack),1,1500));continue;}   // ACK, and wait for exactly the next packet
-    if(!fr.length&&++empty>2)return null;
-    ({fr}=await vx('A3',2,1500));   // nothing to ACK yet: keep the channel alive and listen
+    if(!got&&++empty>2)return null;   // three rounds without a single data packet: it isn't coming
+    ({fr}=await vx('A3',0,1500));   // nothing to ACK yet: keep the channel alive and listen
   }
   return null;
 }
@@ -1567,17 +1576,26 @@ async function vwLost(gen){
   const v=await readVoltage();
   const off=()=>{log('VW mode: engine off. Waiting for the next start.');vwWait=true;lateProbe=0;poll();return false;};
   if(v!=null&&v<13.5)return off();
+  log(`VW mode: stats before the drop: ${VW.ourTests||0} tests from us, ${VW.ecuTests||0} from the engine computer`);
   const t0=performance.now();
-  for(let a=0;a<4&&connected&&gen===pollGen;a++){
-    if(a){for(let i=0;i<8&&gen===pollGen;i++){await new Promise(r=>setTimeout(r,1000));expireStale();tick();}   // keep the trip (GPS distance) and screen going while we wait
-      const v2=await readVoltage();if(v2!=null&&v2<13.5)return off();}
-    if(gen!==pollGen)return false;
-    if(await vOpen(2)){const s=await vreq([0x10,0x89]);if(s&&s[0]===0x50){log('VW mode: back after '+Math.round((performance.now()-t0)/1000)+' s');VWL.live=true;return true;}}
-    await vClose();VW.open=false;
-  }
+  const tryOpen=async n=>{if(await vOpen(n)){const s=await vreq([0x10,0x89]);if(s&&s[0]===0x50){log('VW mode: back after '+Math.round((performance.now()-t0)/1000)+' s');VWL.live=true;VW.lastTest=performance.now();return true;}}await vClose();VW.open=false;return false;};
+  // At once: worked once (21 Nov, group 65).
+  if(gen===pollGen&&await tryOpen(1))return true;
+  // Straight reopens then failed for 40 s every time, but after a session on the K-line (standard OBD) and a 5 s pause,
+  // the channel opened at the first try 6 times out of 6 (22 Nov). So: a short K-line session, close it, pause, reopen.
   if(gen!==pollGen)return false;
-  log('VW mode: could not get the channel back. Standard OBD for the rest of this drive.');
-  VWL.fellBack=true;VWL.fbAt=performance.now();initElm();return false;
+  log('VW mode: resetting the engine computer through the K-line, then reopening');
+  const pr=recall('golf-proto')||'4';
+  for(const c of ['ATWS','ATE0','ATL0','ATS0','ATH0','ATAT2','ATSP'+pr])await cmd(c,c==='ATWS'?3000:1500);
+  const k=await cmd('0100',6000);log('0100 → '+clean(k));
+  await cmd('ATPC',1500);
+  for(let i=0;i<6&&gen===pollGen;i++){await new Promise(r=>setTimeout(r,1000));expireStale();tick();}   // keep the trip (GPS distance) and screen going
+  if(gen!==pollGen)return false;
+  {const v2=await readVoltage();if(v2!=null&&v2<13.5)return off();}
+  if(await tryOpen(2))return true;
+  if(gen!==pollGen)return false;
+  log('VW mode: could not get the channel back. Standard OBD for now, VW again in 90 s.');
+  VWL.fellBack=true;VWL.fbAt=performance.now()-90000;initElm();return false;
 }
 async function vwPoll(){
   const gen=++pollGen;VWL.live=true;VWL.used=true;obdLive=false;
@@ -1585,6 +1603,8 @@ async function vwPoll(){
   while(connected&&!demo&&gen===pollGen){
     let g=VW_SEQ[k++%VW_SEQ.length];if(g==='S')g=VW_SLOW[s++%VW_SLOW.length];
     const t0=performance.now();
+    if(!(await vKeep())){if(gen!==pollGen)return;if(VW.dead||++miss>=2){VW.dead=false;miss=0;if(!(await vwLost(gen)))return;continue;}}
+    if(gen!==pollGen)return;
     if(g==='V')await readVoltage();
     else{const r=await vGroup(g);if(gen!==pollGen)return;
       if(r.raw){miss=0;vwApply(g,r.raw);}
