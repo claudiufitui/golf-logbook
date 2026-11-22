@@ -287,7 +287,7 @@ body.drive-full .tile{min-height:0}
 </div>
 <div class="app">
   <header class="top">
-    <div class="brand"><span class="mark">Golfozaur <b>3000</b></span><small>1.9 TDI BLS · v48</small></div>
+    <div class="brand"><span class="mark">Golfozaur <b>3000</b></span><small>1.9 TDI BLS · v49</small></div>
     <div class="chips">
       <span class="chip rec" id="chipRec" hidden>REC</span>
       <span class="chip" id="chipSrc" hidden>VW</span>
@@ -1038,7 +1038,12 @@ function sampleTrip(now){
   if(rpm>300&&(sp??0)<2)rec.idleS+=dt;
   if(rpm>=2000&&(sp??0)>=60)rec.hotS+=dt;
   // Ignore the first minute after a start: the glow plugs pull the voltage down on purpose.
-  if(rpm>600){rec.runS=(rec.runS||0)+dt;if(rec.runS>60&&rpm>=1200&&live.volt!=null)rec.minVolt=Math.min(rec.minVolt??99,live.volt);}else rec.runS=0;
+  // 22 Nov: 13.1 V at 6 minutes into a 2 °C start was the cold-start loads (after-glow, heater) at near-idle, not the alternator.
+  // So the alternator is judged once the coolant is past 60 °C.
+  if(rpm>600){rec.runS=(rec.runS||0)+dt;if(rec.runS>60&&rpm>=1200&&live.volt!=null&&(live.coolant??0)>=60)rec.minVolt=Math.min(rec.minVolt??99,live.volt);}else rec.runS=0;
+  // Thermostat evidence: the radiator outlet while the engine warms (VW group 062), and the DPF soot estimate.
+  if(live.radT!=null&&live.coolant!=null&&live.coolant>=50&&live.coolant<80)rec.radWarm=Math.max(rec.radWarm??-99,Math.round(live.radT));
+  if(live.dpf!=null)rec.dpf=+live.dpf.toFixed(1);
   if(rpm>0&&rpm<1300&&(live.load??0)>85&&(sp??0)>5)rec.lugS=(rec.lugS||0)+dt;
   rec.maxRpm=Math.max(rec.maxRpm,rpm);rec.maxBoost=Math.max(rec.maxBoost,live.boost??0);rec.maxSpeed=Math.max(rec.maxSpeed,sp??0);rec.maxCoolant=Math.max(rec.maxCoolant,live.coolant??-99);
   if(rec.warm80==null&&(live.coolant??0)>=80)rec.warm80=Math.round(rec.engineS);
@@ -1051,10 +1056,10 @@ function sampleTrip(now){
 function flushChunk(t){t=t||rec;if(!t)return Promise.resolve();if(t.demo){t.buf=[];return Promise.resolve();}
   const rows=t.buf;t.buf=[];const save=()=>put('trips',{...summary(t),open:true});
   return rows.length?put('chunks',{trip:t.id,i:t.chunk++,rows}).then(save):save();}
-const KEEP=['vwS','starts','minVolt','lugS','km','fuel','idleS','hotS','engineS','stops','maxRpm','maxBoost','maxSpeed','maxCoolant','warm80','coolStart','chunk','n','spark','start','id'];
+const KEEP=['vwS','radWarm','dpf','starts','minVolt','lugS','km','fuel','idleS','hotS','engineS','stops','maxRpm','maxBoost','maxSpeed','maxCoolant','warm80','coolStart','chunk','n','spark','start','id'];
 function summary(t){return {id:t.id,start:t.start,end:t.last||Date.now(),durationS:Math.round(((t.last||Date.now())-t.start)/1000),engineS:Math.round(t.engineS||0),stops:t.stops||0,km:+t.km.toFixed(2),fuelL:+t.fuel.toFixed(3),avgL100:t.km>0.5?+(t.fuel/t.km*100).toFixed(2):null,
   samples:t.n,idleS:Math.round(t.idleS),hotS:Math.round(t.hotS),maxRpm:Math.round(t.maxRpm),maxBoost:+t.maxBoost.toFixed(2),maxSpeed:Math.round(t.maxSpeed),coolantStart:t.coolStart,maxCoolant:t.maxCoolant,warmTo80S:t.warm80,
-  outsideC:weather.t,minVolt:t.minVolt??null,starts:t.starts||[],restV:t.starts?.[0]?.restV??null,crankV:t.starts?.[0]?.crankV??null,lugS:Math.round(t.lugS||0),calib:(t.vwS||0)>(t.engineS||0)/2?1:calib,src:(t.vwS||0)>(t.engineS||0)/2?'vw':'obd',fields:['t'].concat(FIELDS,EXTRA),supported:[...supported],spark:t.spark,demo:t.demo,state:Object.fromEntries(KEEP.map(k=>[k,t[k]]))};}
+  outsideC:weather.t,minVolt:t.minVolt??null,starts:t.starts||[],restV:t.starts?.[0]?.restV??null,crankV:t.starts?.[0]?.crankV??null,lugS:Math.round(t.lugS||0),radWarm:t.radWarm??null,dpf:t.dpf??null,calib:(t.vwS||0)>(t.engineS||0)/2?1:calib,src:(t.vwS||0)>(t.engineS||0)/2?'vw':'obd',fields:['t'].concat(FIELDS,EXTRA),supported:[...supported],spark:t.spark,demo:t.demo,state:Object.fromEntries(KEEP.map(k=>[k,t[k]]))};}
 const demoTrips=[];
 function saveTripLog(t){try{const txt=logLines.join('\n')+(VW.log.length?'\n\n--- VW ---\n'+VW.log.slice(-1500).join('\n'):'');
   store('golf-log-'+t.id,txt.slice(-400000));
@@ -1321,12 +1326,17 @@ async function renderHome(){
   if(volts.length){const mv=Math.min(...volts);H.push(mv>=13.2?hline('ok','Alternator: charging fine',`Lowest while driving: ${mv.toFixed(1)} V.`):hline('warn','Alternator: check',`Dropped to ${mv.toFixed(1)} V while driving above 1200 rpm. It should stay above 13.2 V.`));}
   const longT=trips.filter(x=>(x.engineS||0)>=600&&x.maxCoolant>0).slice(0,5);
   if(longT.length){const mc=Math.max(...longT.map(x=>x.maxCoolant));
-    H.push(mc>=89?hline('ok','Thermostat: fine',`Reaches ${mc}°C on longer trips.`):mc>=84?hline('warn','Thermostat: under watch',`Tops out at ${mc}°C on trips over 10 minutes. Normal is about 90°C. A 20-minute motorway run will settle it.`):hline('bad','Thermostat: probably opening early',`Only ${mc}°C on longer trips. Worth replacing at the next service.`));}
+    // 22 Nov: VW's spec for this engine: starts opening at about 87 °C, fully open at 102 °C. In winter it settles in the mid-80s.
+    const rad=trips.find(x=>x.radWarm!=null&&x.radWarm>-99);
+    H.push(mc>=83?hline('ok','Thermostat: working',`Holds about ${mc}°C once warm. It only starts opening at 87°C, so in cold weather it settles in the mid-80s; 90 comes with more load or warmer air.${rad?` Radiator outlet stayed at ${rad.radWarm}°C while the engine warmed: kept closed, as it should be.`:''}`)
+      :mc>=78?hline('warn','Thermostat: under watch',`Only ${mc}°C on trips over 10 minutes. With a working thermostat it should settle around 85°C.`)
+      :hline('bad','Thermostat: probably stuck open',`Only ${mc}°C on trips over 10 minutes. It should settle around 85°C. Worth replacing.`));}
   let dtc=null;try{dtc=JSON.parse(recall('golf-dtc')||'null');}catch(e){}
   if(dtc)H.push(dtc.mil||dtc.count?hline('bad','Fault codes stored',`${dtc.count} code${dtc.count===1?'':'s'}, warning light ${dtc.mil?'on':'off'}. Read them in the Car tab and send them to Claude.`):hline('ok','Fault codes: none',`Checked ${new Date(dtc.at).toLocaleDateString('en-GB',{day:'numeric',month:'short'})}.`));
   const lastLong=trips.find(x=>(x.hotS||0)>=600);
   const days=lastLong?Math.floor((Date.now()-lastLong.start)/dayMs):null;
-  if(trips.length)H.push(days!=null&&days<=10?hline('ok','DPF: had a good run',`${days===0?'Today':days+' day'+(days>1?'s':'')+' ago'}: 10+ minutes at 2000+ rpm above 60 km/h.`):hline('warn','DPF: due a long run',(days!=null?`Last one ${days} days ago. `:'No long run recorded yet. ')+'20 minutes on the ring road or motorway lets it clean itself.'));
+  const sootT=trips.filter(x=>x.dpf!=null);const soot=sootT.length?` Soot estimate ${sootT[0].dpf}%${sootT.length>1?` (${sootT[sootT.length-1].dpf}% on ${new Date(sootT[sootT.length-1].start).toLocaleDateString('en-GB',{day:'numeric',month:'short'})})`:''}.`:'';
+  if(trips.length)H.push(days!=null&&days<=10?hline('ok','DPF: had a good run',`${days===0?'Today':days+' day'+(days>1?'s':'')+' ago'}: 10+ minutes at 2000+ rpm above 60 km/h.${soot}`):hline('warn','DPF: due a long run',(days!=null?`Last one ${days} days ago. `:'No long run recorded yet. ')+'20 minutes on the ring road or motorway lets it clean itself.'+soot));
   const lug=recent.reduce((a,x)=>a+(x.lugS||0),0);
   if(recent.length&&lug>20)H.push(hline('warn','Driving: labouring at low revs',`${Math.round(lug)} s in recent trips with the pedal deep under 1300 rpm. Drop a gear before you accelerate hard.`));
   $('health').innerHTML=H.join('')||'<li class="muted small">Drive a few trips and this fills in.</li>';
