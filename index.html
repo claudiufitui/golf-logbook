@@ -289,7 +289,7 @@ body.drive-full .tile{min-height:0}
 </div>
 <div class="app">
   <header class="top">
-    <div class="brand"><span class="mark">Golfozaur <b>3000</b></span><small>1.9 TDI BLS · v52</small></div>
+    <div class="brand"><span class="mark">Golfozaur <b>3000</b></span><small>1.9 TDI BLS · v53</small></div>
     <div class="chips">
       <span class="chip rec" id="chipRec" hidden>REC</span>
       <span class="chip" id="chipSrc" hidden>VW</span>
@@ -1014,6 +1014,21 @@ const EXTRA=['lat','lon','alt','gpsSpeed','heading','ax','ay','az'];
 const CHUNK=60;
 function tripId(){const d=new Date();const p=n=>String(n).padStart(2,'0');return `${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;}
 function newTrip(isDemo){return {id:tripId(),start:Date.now(),last:Date.now(),buf:[],chunk:0,n:0,km:0,fuel:0,idleS:0,hotS:0,engineS:0,stops:0,maxRpm:0,maxBoost:0,maxSpeed:0,maxCoolant:-99,warm80:null,coolStart:live.coolant??null,demo:isDemo,spark:[]};}
+// The thermostat's opening point, read off the radiator outlet sensor (VW group 062). While the thermostat is shut nothing
+// flows through the radiator and that reading sits still or creeps up with the engine's heat; the moment it opens, the cold
+// water in the radiator flows past the sensor and the reading falls. 21–22 Nov: it fell with the engine at 84.6, 83.7 and
+// (after a gap) ≤83.7 °C. Judged only on a real warm-up (engine under 70 °C at the start).
+function thermoStep(t,coolant,radT){
+  if(coolant==null||radT==null||t.thermoOpen!=null||t.coolStart==null||t.coolStart>=70)return;
+  t.radMax=Math.max(t.radMax??-99,radT);
+  if(coolant>=70&&radT<=t.radMax-3)t.thermoOpen=Math.round(coolant*10)/10;
+}
+// What the VW link did during a trip: our channel tests, the engine computer's, the longest gap between ours (it tests us
+// after ~1 s without one), repeated packets, drops.
+function vwTripStats(t){
+  if(!t.vw0||!t.vwS)return null;const d=(k,b)=>Math.max(0,(VW[k]||0)-(b||0));
+  return {ourTests:d('ourTests',t.vw0.our),ecuTests:d('ecuTests',t.vw0.ecu),longestGapS:+((VW.maxGap||0)/1000).toFixed(2),repeats:d('retx',t.vw0.retx),drops:d('drops',t.vw0.drops)};
+}
 const PAUSE_MAX=15*60000;
 let paused=null,pausedAt=null;
 // Engine on → trip runs. Engine off → pause. Back within 15 min → same trip. Otherwise it closes.
@@ -1026,7 +1041,9 @@ function tripAuto(){
   const engineOn=(live.rpm!=null&&live.rpm>300)||gap;
   if(engineOn&&!rec){
     if(paused&&Date.now()-pausedAt<PAUSE_MAX){rec=paused;paused=null;rec.last=Date.now();rec.stops++;if(pendingStart){(rec.starts=rec.starts||[]).push(pendingStart);pendingStart=null;}log('Trip resumed '+rec.id);renderTripState(true);}
-    else{if(paused)closeTrip(paused);paused=null;rec=newTrip(demo);if(pendingStart&&Date.now()-pendingStart.at<60000){rec.starts=[pendingStart];}pendingStart=null;log('Trip started '+rec.id);renderTripState(true);}
+    else{if(paused)closeTrip(paused);paused=null;rec=newTrip(demo);if(pendingStart&&Date.now()-pendingStart.at<60000){rec.starts=[pendingStart];}pendingStart=null;
+      rec.vw0={our:VW.ourTests||0,ecu:VW.ecuTests||0,retx:VW.retx||0,drops:VW.drops||0};VW.maxGap=0;
+      log('Trip started '+rec.id);renderTripState(true);}
   }else if(!engineOn&&rec){
     const t=rec;rec=null;paused=t;pausedAt=Date.now();flushChunk(t);saveTripLog(t);log('Trip paused, engine off');renderTripState(true);
   }
@@ -1051,6 +1068,8 @@ function sampleTrip(now){
   if(VWL.live)rec.vwS=(rec.vwS||0)+dt;
   if(live.lph!=null)rec.fuel+=live.lph*dt/3600;
   rec.engineS+=dt;
+  // VW mode reads the coolant a few seconds after the trip starts (22 Nov: it was missing from the summary).
+  if(rec.coolStart==null&&live.coolant!=null&&rec.engineS<120)rec.coolStart=live.coolant;
   const rpm=live.rpm??0;
   if(rpm>300&&(sp??0)<2)rec.idleS+=dt;
   if(rpm>=2000&&(sp??0)>=60)rec.hotS+=dt;
@@ -1060,6 +1079,7 @@ function sampleTrip(now){
   if(rpm>600){rec.runS=(rec.runS||0)+dt;if(rec.runS>60&&rpm>=1200&&live.volt!=null&&(live.coolant??0)>=60)rec.minVolt=Math.min(rec.minVolt??99,live.volt);}else rec.runS=0;
   // Thermostat evidence: the radiator outlet while the engine warms (VW group 062), and the DPF soot estimate.
   if(live.radT!=null&&live.coolant!=null&&live.coolant>=50&&live.coolant<80)rec.radWarm=Math.max(rec.radWarm??-99,Math.round(live.radT));
+  thermoStep(rec,live.coolant,live.radT);
   if(live.dpf!=null)rec.dpf=+live.dpf.toFixed(1);
   if(rpm>0&&rpm<1300&&(live.load??0)>85&&(sp??0)>5)rec.lugS=(rec.lugS||0)+dt;
   rec.maxRpm=Math.max(rec.maxRpm,rpm);rec.maxBoost=Math.max(rec.maxBoost,live.boost??0);rec.maxSpeed=Math.max(rec.maxSpeed,sp??0);rec.maxCoolant=Math.max(rec.maxCoolant,live.coolant??-99);
@@ -1073,12 +1093,21 @@ function sampleTrip(now){
 function flushChunk(t){t=t||rec;if(!t)return Promise.resolve();if(t.demo){t.buf=[];return Promise.resolve();}
   const rows=t.buf;t.buf=[];const save=()=>put('trips',{...summary(t),open:true});
   return rows.length?put('chunks',{trip:t.id,i:t.chunk++,rows}).then(save):save();}
-const KEEP=['vwS','radWarm','dpf','starts','minVolt','lugS','km','fuel','idleS','hotS','engineS','stops','maxRpm','maxBoost','maxSpeed','maxCoolant','warm80','coolStart','chunk','n','spark','start','id'];
+const KEEP=['vwS','radWarm','radMax','thermoOpen','dpf','starts','minVolt','lugS','km','fuel','idleS','hotS','engineS','stops','maxRpm','maxBoost','maxSpeed','maxCoolant','warm80','coolStart','chunk','n','spark','start','id'];
 function summary(t){return {id:t.id,start:t.start,end:t.last||Date.now(),durationS:Math.round(((t.last||Date.now())-t.start)/1000),engineS:Math.round(t.engineS||0),stops:t.stops||0,km:+t.km.toFixed(2),fuelL:+t.fuel.toFixed(3),avgL100:t.km>0.5?+(t.fuel/t.km*100).toFixed(2):null,
   samples:t.n,idleS:Math.round(t.idleS),hotS:Math.round(t.hotS),maxRpm:Math.round(t.maxRpm),maxBoost:+t.maxBoost.toFixed(2),maxSpeed:Math.round(t.maxSpeed),coolantStart:t.coolStart,maxCoolant:t.maxCoolant,warmTo80S:t.warm80,
-  outsideC:weather.t,minVolt:t.minVolt??null,starts:t.starts||[],restV:t.starts?.[0]?.restV??null,crankV:t.starts?.[0]?.crankV??null,lugS:Math.round(t.lugS||0),radWarm:t.radWarm??null,dpf:t.dpf??null,calib:(t.vwS||0)>(t.engineS||0)/2?1:calib,src:(t.vwS||0)>(t.engineS||0)/2?'vw':'obd',fields:['t'].concat(FIELDS,EXTRA),supported:[...supported],spark:t.spark,demo:t.demo,state:Object.fromEntries(KEEP.map(k=>[k,t[k]]))};}
+  outsideC:weather.t,minVolt:t.minVolt??null,starts:t.starts||[],restV:t.starts?.[0]?.restV??null,crankV:t.starts?.[0]?.crankV??null,lugS:Math.round(t.lugS||0),radWarm:t.radWarm??null,thermoOpenC:t.thermoOpen??null,vw:vwTripStats(t),dpf:t.dpf??null,calib:(t.vwS||0)>(t.engineS||0)/2?1:calib,src:(t.vwS||0)>(t.engineS||0)/2?'vw':'obd',fields:['t'].concat(FIELDS,EXTRA),supported:[...supported],spark:t.spark,demo:t.demo,state:Object.fromEntries(KEEP.map(k=>[k,t[k]]))};}
 const demoTrips=[];
-function saveTripLog(t){try{const txt=logLines.join('\n')+(VW.log.length?'\n\n--- VW ---\n'+VW.log.slice(-1500).join('\n'):'');
+function saveTripLog(t){try{
+  let vw='';
+  if(VW.log.length){
+    // 22 Nov: the raw lines alone covered only the last ~3 minutes of a 17-minute drive. Now also every notable VW event of
+    // the trip (tests from the engine computer, repeats, lost packets, drops), found by time on the VW log's own clock.
+    const p0=(performance.now()-(Date.now()-t.start))/1000;
+    const ev=VW.log.filter(l=>parseFloat(l)>=p0&&/^\S+\s+(\(|==|ECU closed)/.test(l));const st=vwTripStats(t);
+    vw='\n\n--- VW this trip ---\n'+(st?`${st.ourTests} channel tests from us (longest gap ${st.longestGapS} s), ${st.ecuTests} from the engine computer, ${st.repeats} repeated packets, ${st.drops} drops\n`:'')+
+      (ev.length?ev.slice(-400).join('\n'):'(no notable events)')+'\n\n--- VW ---\n'+VW.log.slice(-1500).join('\n');}
+  const txt=logLines.slice(-1500).join('\n')+vw;
   store('golf-log-'+t.id,txt.slice(-400000));
   // keep only the 3 newest
   const ks=Object.keys(localStorage).filter(k=>k.startsWith('golf-log-')).sort();ks.slice(0,-3).forEach(k=>localStorage.removeItem(k));}catch(e){}}
@@ -1343,9 +1372,15 @@ async function renderHome(){
   if(volts.length){const mv=Math.min(...volts);H.push(mv>=13.2?hline('ok','Alternator: charging fine',`Lowest while driving: ${mv.toFixed(1)} V.`):hline('warn','Alternator: check',`Dropped to ${mv.toFixed(1)} V while driving above 1200 rpm. It should stay above 13.2 V.`));}
   const longT=trips.filter(x=>(x.engineS||0)>=600&&x.maxCoolant>0).slice(0,5);
   if(longT.length){const mc=Math.max(...longT.map(x=>x.maxCoolant));
-    // 22 Nov: VW's spec for this engine: starts opening at about 87 °C, fully open at 102 °C. In winter it settles in the mid-80s.
-    const rad=trips.find(x=>x.radWarm!=null&&x.radWarm>-99);
-    H.push(mc>=83?hline('ok','Thermostat: working',`Holds about ${mc}°C once warm. It only starts opening at 87°C, so in cold weather it settles in the mid-80s; 90 comes with more load or warmer air.${rad?` Radiator outlet stayed at ${rad.radWarm}°C while the engine warmed: kept closed, as it should be.`:''}`)
+    // VW's figure for this engine (workshop manual, 1.9 TDI unit injector): starts opening at about 87 °C, fully open at about
+    // 102 °C. Measured on this car from the radiator outlet sensor (thermoOpenC): the radiator starts taking coolant with the
+    // engine at ~84 °C, three warm-ups in a row (21–22 Nov). That's why it settles in the mid-80s in winter.
+    const ops=trips.map(x=>x.thermoOpenC).filter(v=>v!=null).slice(0,5);
+    const op=ops.length?ops.slice().sort((a,b)=>a-b)[Math.floor(ops.length/2)]:null;
+    const opens=op!=null?` It opens at about ${Math.round(op)}°C on your car (the radiator outlet starts to cool then${ops.length>1?`, ${ops.length} warm-ups`:''}); VW's figure is about 87°C. So in winter it sits in the mid-80s, and runs warmer in summer or under sustained load.`
+      :` VW's figure: it starts opening at about 87°C, so in cold weather it settles in the mid-80s.`;
+    H.push(op!=null&&op<80?hline('warn','Thermostat: opens early',`It lets coolant into the radiator at about ${Math.round(op)}°C (VW: about 87°C), so the engine runs cool. Worth replacing.`)
+      :mc>=83?hline('ok','Thermostat: working',`Holds about ${mc}°C once warm.${opens}`)
       :mc>=78?hline('warn','Thermostat: under watch',`Only ${mc}°C on trips over 10 minutes. With a working thermostat it should settle around 85°C.`)
       :hline('bad','Thermostat: probably stuck open',`Only ${mc}°C on trips over 10 minutes. It should settle around 85°C. Worth replacing.`));}
   let dtc=null;try{dtc=JSON.parse(recall('golf-dtc')||'null');}catch(e){}
@@ -1511,7 +1546,7 @@ async function vOpen(maxTries=1e9){
 const TP_KEEPALIVE_MS=350;   // vag-blocks: every 500 ms; ours is checked between requests, so a little sooner
 // Send one frame and listen. The ECU's own tests (A3) and disconnects (A8) are taken out of the reply and reported.
 async function vx(hex,count,timeout){
-  if(hex==='A3')VW.lastTest=performance.now();
+  if(hex==='A3'){const now=performance.now();if(VW.open&&VW.lastTest)VW.maxGap=Math.max(VW.maxGap||0,now-VW.lastTest);VW.lastTest=now;}
   const res=await vsend(hex,count,timeout);const fr=[];let tested=false;
   for(const x of res.fr){
     if(x.id===VW.rx&&x.b[0]===0xA3){tested=true;continue;}
@@ -1662,7 +1697,7 @@ async function kLineReset(alive){
 }
 // The channel dropped. Engine off → back to waiting. Otherwise reopen: at once, then through the K-line; give up → OBD.
 async function vwLost(gen){
-  VWL.live=false;VW.open=false;VWL.reopening=true;log('VW mode: the engine computer dropped the channel');
+  VWL.live=false;VW.open=false;VWL.reopening=true;VW.drops=(VW.drops||0)+1;log('VW mode: the engine computer dropped the channel');
   try{
     const off=()=>{log('VW mode: engine off. Waiting for the next start.');vwWait=true;lateProbe=0;poll();return false;};
     {const v=await readVoltage();if(v!=null&&v<13.5)return off();}
