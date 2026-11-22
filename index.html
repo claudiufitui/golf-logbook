@@ -289,7 +289,7 @@ body.drive-full .tile{min-height:0}
 </div>
 <div class="app">
   <header class="top">
-    <div class="brand"><span class="mark">Golfozaur <b>3000</b></span><small>1.9 TDI BLS · v53</small></div>
+    <div class="brand"><span class="mark">Golfozaur <b>3000</b></span><small>1.9 TDI BLS · v5.4</small></div>
     <div class="chips">
       <span class="chip rec" id="chipRec" hidden>REC</span>
       <span class="chip" id="chipSrc" hidden>VW</span>
@@ -645,7 +645,7 @@ async function openSerial(){
   catch(e){if(!/already open/i.test(e.message)){log('Serial open failed: '+e.message);chip('chipBt','No link','bad');
     if(!autoMode)btProblem('<b>Couldn’t open the adapter.</b> Check the ignition is on and no other app is connected to it, then tap Connect again.');return;}}
   sClosing=false;sWriter=port.writable.getWriter();sReader=port.readable.getReader();
-  connected=true;drainUntil=0;readSerial();
+  connected=true;stale=0;readSerial();
   let r=await cmd('ATI',3000);
   if(!(r&&r.trim())){log('  no answer, waking the adapter…');await cmd('',800);r=await cmd('ATI',3000);}
   log('  ATI → '+clean(r));
@@ -698,7 +698,7 @@ async function openLinkInner(){
     try{await withTimeout(rx.startNotifications(),4000,'Starting notifications');}catch(e){log('  notifications: '+e.message+' Trying anyway…');}
     if(rxAttached&&rxAttached!==rx)rxAttached.removeEventListener('characteristicvaluechanged',onRx);
     rx.removeEventListener('characteristicvaluechanged',onRx);rx.addEventListener('characteristicvaluechanged',onRx);rxAttached=rx;
-    rxChar=rx;txChar=tx;connected=true;drainUntil=0;
+    rxChar=rx;txChar=tx;connected=true;stale=0;
     let r=await cmd('ATI',3000);
     if(!(r&&r.trim())){log('  no answer, waking the adapter…');await cmd('',800);r=await cmd('ATI',3000);}
     log('  ATI → '+clean(r));
@@ -740,17 +740,18 @@ async function autoConnect(){
     autoMode=true;await openLink();autoMode=false;if(!connected)scheduleReconnect();
   }catch(e){log('Auto-connect: '+e.message);}
 }
-function flush(){const i=rxBuf.indexOf('>');const chunk=rxBuf.slice(0,i);rxBuf=rxBuf.slice(i+1);if(pending){const p=pending;pending=null;clearTimeout(p.t);p.res(chunk);}}
+function flush(){const i=rxBuf.indexOf('>');const chunk=rxBuf.slice(0,i);rxBuf=rxBuf.slice(i+1);if(pending){const p=pending;pending=null;clearTimeout(p.t);p.res(chunk);}else if(stale>0)stale--;}
 async function writeStr(s){const d=new TextEncoder().encode(s+'\r');
   if(transport==='serial'){await Promise.race([sWriter.write(d),new Promise((_,rej)=>setTimeout(()=>rej(new Error('write timed out')),3000))]);return;}
   for(let i=0;i<d.length;i+=20){const part=d.slice(i,i+20);const w=(txChar.properties.writeWithoutResponse&&txChar.writeValueWithoutResponse)?txChar.writeValueWithoutResponse(part):txChar.writeValue(part);await Promise.race([w,new Promise((_,rej)=>setTimeout(()=>rej(new Error('write timed out')),3000))]);}}
-let q=Promise.resolve(),drainUntil=0;
+let q=Promise.resolve(),stale=0;   // prompts still owed by commands that timed out
 function cmd(c,timeout=2000){
   const run=()=>new Promise(async res=>{
     if(!connected)return res(null);
-    // After a timeout the late answer may still arrive: give it a moment to land and be thrown away.
-    const wait=drainUntil-performance.now();if(wait>0)await sleep(wait);
-    rxBuf='';pending={res,t:setTimeout(()=>{pending=null;drainUntil=performance.now()+250;res(null);},timeout)};
+    // A command that timed out may still be running in the adapter. Wait for its prompt (up to 1.5 s): otherwise its late
+    // answer would be taken for this command's, and our characters would cut it short (an ELM327 stops on any input).
+    for(const t0=performance.now();stale>0&&connected&&performance.now()-t0<1500;)await sleep(20);
+    stale=0;rxBuf='';pending={res,t:setTimeout(()=>{pending=null;stale++;res(null);},timeout)};
     try{await writeStr(c);}catch(e){if(pending){clearTimeout(pending.t);pending=null;}log(c+' write failed: '+e.message);res(null);}
   });
   const p=q.then(run);q=p.catch(()=>{});return p;
@@ -1106,7 +1107,10 @@ function saveTripLog(t){try{
     const p0=(performance.now()-(Date.now()-t.start))/1000;
     const ev=VW.log.filter(l=>parseFloat(l)>=p0&&/^\S+\s+(\(|==|ECU closed)/.test(l));const st=vwTripStats(t);
     vw='\n\n--- VW this trip ---\n'+(st?`${st.ourTests} channel tests from us (longest gap ${st.longestGapS} s), ${st.ecuTests} from the engine computer, ${st.repeats} repeated packets, ${st.drops} drops\n`:'')+
-      (ev.length?ev.slice(-400).join('\n'):'(no notable events)')+'\n\n--- VW ---\n'+VW.log.slice(-1500).join('\n');}
+      (ev.length?ev.slice(-400).join('\n'):'(no notable events)')+
+      // the exchanges that led to each drop of this trip, so the cause can be read even when the drop was long ago
+      (VW.dropLogs||[]).filter(d=>d.at>=t.start).map(d=>`\n\n--- VW before the drop at ${new Date(d.at).toTimeString().slice(0,8)} ---\n`+d.lines.join('\n')).join('')+
+      '\n\n--- VW ---\n'+VW.log.slice(-1500).join('\n');}
   const txt=logLines.slice(-1500).join('\n')+vw;
   store('golf-log-'+t.id,txt.slice(-400000));
   // keep only the 3 newest
@@ -1543,7 +1547,13 @@ async function vOpen(maxTries=1e9){
 //  · When our ACK comes late it sends the last packet again (2 of ~850 requests) and then takes the late ACK. With no ACK
 //    at all (19 Nov lab log) it sent the packet twice more and closed the channel, all within 0.8 s.
 //  · It never skipped a sequence number.
-const TP_KEEPALIVE_MS=350;   // vag-blocks: every 500 ms; ours is checked between requests, so a little sooner
+// 22 Nov drives: v5.1 (test every 450 ms, packets sent twice acknowledged again) ran 17 minutes without a drop; v5.3 (350 ms,
+// repeats ignored) dropped twice in 9 minutes with no test from the ECU at all. So v5.4 goes back to v5.1's rules, plus what
+// keeps a slow Bluetooth moment from turning into a drop: tests sooner after a slow exchange, long command timeouts, and a
+// timed-out command never confused with the next.
+const TP_KEEPALIVE_MS=450, TP_KEEPALIVE_SLOW_MS=300;   // vag-blocks: every 500 ms. After a slow exchange (>300 ms), sooner.
+// The packet the ECU sends again when our ACK didn't reach it: its last packet (op 1), with the sequence we already acknowledged.
+const repeatOf=fr=>fr.find(x=>x.id===VW.rx&&x.b.length>1&&(x.b[0]>>4)===1&&VW.rseq!=null&&(x.b[0]&15)===((VW.rseq+15)&15));
 // Send one frame and listen. The ECU's own tests (A3) and disconnects (A8) are taken out of the reply and reported.
 async function vx(hex,count,timeout){
   if(hex==='A3'){const now=performance.now();if(VW.open&&VW.lastTest)VW.maxGap=Math.max(VW.maxGap||0,now-VW.lastTest);VW.lastTest=now;}
@@ -1558,19 +1568,23 @@ async function vx(hex,count,timeout){
 // Answer the ECU's test with our parameters, waiting for 'count' frames (a packet it may still owe us).
 async function vAnswer(count=1){
   const fr=[];
-  for(let i=0;i<2;i++){const r=await vx('A1'+(VW.mine||'0F8AFF4AFF'),count,800);fr.push(...r.fr);if(!r.tested||VW.dead)break;}
+  for(let i=0;i<2;i++){const r=await vx('A1'+(VW.mine||'0F8AFF4AFF'),count,2000);fr.push(...r.fr);if(!r.tested||VW.dead)break;}
   return fr;
 }
 // Our own channel test, between requests only (a test sent while an answer is due can make an ECU drop that answer).
-async function vKeep(force){
-  if(!force&&performance.now()-(VW.lastTest||0)<TP_KEEPALIVE_MS)return true;
+// 'slow' = the last exchange was slow: Bluetooth is having a moment, so test sooner (v5.1's tests ended up 1.02 s apart once).
+async function vKeep(force,slow){
+  if(!force&&performance.now()-(VW.lastTest||0)<(slow?TP_KEEPALIVE_SLOW_MS:TP_KEEPALIVE_MS))return true;
   VW.ourTests=(VW.ourTests||0)+1;
-  const r=await vx('A3',1,600);
+  const r=await vx('A3',1,2000);
   let ok=r.fr.some(x=>x.id===VW.rx&&x.b[0]===0xA1);
   if(r.tested){await vAnswer(1);ok=true;}   // it tested us at the same moment: it's there
+  const rp=repeatOf(r.fr);
+  if(rp){ok=true;VW.retx++;vlog('(the ECU sent its last packet again: our ACK did not reach it. Acknowledging again)');await vx('B'+((rp.b[0]+1)&15).toString(16).toUpperCase(),0,2000);}
+  if(!ok&&!VW.dead)vlog('(no answer to our channel test)');
   return ok&&!VW.dead;
 }
-async function vClose(){try{await vsend('A8',1,800);}catch(e){}VW.open=false;}
+async function vClose(){try{await vsend('A8',1,1500);}catch(e){}VW.open=false;}
 // Send one KWP2000 request (up to 5 bytes, so one packet) and return the answer, acknowledging the ECU's packets.
 // nFrames = how many packets the answer takes (a measuring block: 4); unknown → 1, a short answer.
 async function vreq(pl,nFrames=1){
@@ -1580,24 +1594,29 @@ async function vreq(pl,nFrames=1){
   // in, so our ACK goes out at once. While the ECU has been testing us lately, one more slot: a test inside the burst
   // would otherwise end the listening one packet early.
   const spare=performance.now()-(VW.ecuTestAt||-1e9)<8000?1:0;
-  let r=await vx(f.map(H2).join(''),Math.min(15,1+(VW.bs>1?nFrames:1)+spare),1500);
+  let r=await vx(f.map(H2).join(''),Math.min(15,1+(VW.bs>1?nFrames:1)+spare),2000);
   let fr=r.fr,tested=r.tested,data=[],need=null,quiet=0,busy=0,gap=false;
   for(let round=0;round<40;round++){
-    let ack=null,done=false,got=false;
+    let ack=null,done=false,got=false,reack=null;
     for(const {id,b} of fr){if(id!==VW.rx||!b.length)continue;const op=b[0]>>4,sq=b[0]&15;
       if(op===0xB||op===0x9)continue;   // the ECU acknowledging our request
-      if(b[0]===0xA8){VW.dead=true;VW.open=false;vlog('ECU closed the channel');await vsend('A8',0,300);return null;}
+      if(b[0]===0xA8){VW.dead=true;VW.open=false;vlog('ECU closed the channel');await vsend('A8',0,1500);return null;}
       if(b[0]===0xA4){vlog('(ECU sent a break: discarding the partial answer)');data=[];need=null;VW.rseq=null;continue;}
       if(op>3)continue;   // A1 and other channel messages
       if(VW.rseq!=null&&sq!==VW.rseq){const back=(VW.rseq-sq+16)&15;
-        // A packet sent again because our ACK was late. Seen twice in ~850 requests; the ECU then took the ACK we'd sent.
-        if(back>0&&back<8){VW.retx++;vlog('(repeat of packet '+sq+', ignored)');continue;}
+        // A packet sent again: our ACK didn't reach the ECU in time. 21–22 Nov: twice in ~850 requests, both inside our ACK's
+        // own window, crossing it (the ECU then took that ACK). Coming again later with nothing newer, the ACK was lost:
+        // acknowledge again, as v5.1 did (19 Nov lab: with no ACK at all it sends twice more and closes within 0.8 s).
+        if(back>0&&back<8){VW.retx++;if(op===0||op===1)reack=(sq+1)&15;continue;}
         vlog('(packet '+sq+' out of order, expected '+VW.rseq+')');
         if(data.length)gap=true;}   // a gap inside this answer: bytes are missing (before its first packet it's just a resync)
       VW.rseq=(sq+1)&15;data.push(...b.slice(1));got=true;
       if(need==null&&data.length>=2)need=((data[0]&0x0F)<<8)|data[1];   // the high nibble carries flags (0x80 on "busy")
       if(op===0||op===1)ack=(sq+1)&15;
       if(op===1||op===3)done=true;}
+    if(reack!=null&&!got){vlog('(the ECU sent a packet again: our ACK did not reach it. Acknowledging again)');
+      r=await vx('B'+hx(reack),0,2000);fr=r.fr;tested=tested||r.tested;continue;}
+    if(reack!=null)vlog('(a packet sent again crossed our ACK: ignored)');
     // Packets still to come: whole 7-byte packets, the 2 length bytes included.
     const left=need!=null?Math.max(1,Math.ceil((need+2-data.length)/7)):(VW.bs>1?nFrames:1);
     if(done&&!gap&&need!=null&&data.length-2>=need){
@@ -1609,24 +1628,30 @@ async function vreq(pl,nFrames=1){
         // reads are never answered this way.)
         if(++busy>20){vlog('(the ECU stayed busy, giving up)');return null;}
         vlog('(ECU busy, waiting)');
-        await vsend('ATSTFF',0,800);r=await vx(ack!=null?'B'+hx(ack):'A3',ack!=null?1:2,2500);await vsend('ATST19',0,800);
+        await vsend('ATSTFF',0,1500);r=await vx(ack!=null?'B'+hx(ack):'A3',ack!=null?1:2,3000);await vsend('ATST19',0,1500);
         fr=r.fr;tested=tested||r.tested;quiet=0;gap=false;continue;}
       // ACK first (the ECU allows 100 ms for it), then answer a test it sent meanwhile.
-      if(ack!=null){r=await vx('B'+hx(ack),0,600);tested=tested||r.tested;}
+      // (Count 1: the window ends the moment anything comes; when nothing does, it's the same 100 ms wait as before.)
+      if(ack!=null){r=await vx('B'+hx(ack),1,2000);tested=tested||r.tested;
+        // The last packet again, right after our ACK: usually it crossed the ACK (the ECU then takes it; 2 of 2 in the logs),
+        // but a lost ACK looks the same. Listen once more: a second repeat means it never got the ACK, so send it again.
+        if(repeatOf(r.fr)){VW.retx++;vlog('(the ECU sent its last packet again right after our ACK: listening)');
+          const c=await vx('A3',2,2000);tested=tested||c.tested;
+          if(repeatOf(c.fr)){vlog('(sent again: our ACK did not reach it. Acknowledging again)');await vx('B'+hx(ack),0,2000);}}}
       if(tested&&!VW.dead)await vAnswer(1);
       return msg;}
     if(done){   // the last packet is in but packets before it were lost: acknowledge, so the channel lives, and give up
-      if(ack!=null){r=await vx('B'+hx(ack),0,600);tested=tested||r.tested;}
+      if(ack!=null){r=await vx('B'+hx(ack),0,2000);tested=tested||r.tested;}
       if(tested&&!VW.dead)await vAnswer(1);
       vlog('(answer incomplete: packets were lost)');return null;}
     if(ack!=null){   // end of a block (op 0): the next block follows our ACK (block size 1: one packet)
-      r=await vx('B'+hx(ack),VW.bs>1?Math.min(15,left,VW.bs):1,1500);fr=r.fr;tested=tested||r.tested;continue;}
+      r=await vx('B'+hx(ack),VW.bs>1?Math.min(15,left,VW.bs):1,2000);fr=r.fr;tested=tested||r.tested;continue;}
     if(VW.dead)return null;
     if(tested){   // answer its test; the packet it still owes sometimes comes right after (11 of 62)
       tested=false;fr=await vAnswer(busy?1:left);if(fr.length)continue;}   // waiting out a "busy": just the next frame
-    if(!got&&++quiet>3)return null;   // four tries without a single packet: it isn't coming
+    if(!got&&++quiet>3){vlog('(no answer: gave up on this request)');return null;}   // four tries without a single packet
     // Ask for the rest with a channel test of our own: it answers A1 and sends what it still owes (46 of 62 at once).
-    r=await vx('A3',Math.min(15,1+left),1200);fr=r.fr;tested=r.tested;
+    r=await vx('A3',Math.min(15,1+left),2000);fr=r.fr;tested=r.tested;
   }
   return null;
 }
@@ -1696,15 +1721,25 @@ async function kLineReset(alive){
   for(let i=0;i<6&&alive();i++){await sleep(1000);expireStale();tick();}
 }
 // The channel dropped. Engine off → back to waiting. Otherwise reopen: at once, then through the K-line; give up → OBD.
-async function vwLost(gen){
-  VWL.live=false;VW.open=false;VWL.reopening=true;VW.drops=(VW.drops||0)+1;log('VW mode: the engine computer dropped the channel');
+// 'dead' = the ECU said so (A8); otherwise two exchanges in a row went unanswered, and a channel test decides.
+// A straight reopen right after a drop worked once (21 Nov) and was refused every other time (22 Nov: 4 of 4), so the reset
+// through the K-line comes first now.
+async function vwLost(gen,dead){
+  VWL.live=false;
+  // Two misses but the channel still answers a test: carry on (once per 20 s, so a half-working channel still gets reset).
+  if(!dead&&performance.now()-(VW.falseAlarmAt||-1e9)>20000&&await vKeep(true)){
+    VW.falseAlarmAt=performance.now();log('VW mode: two exchanges went unanswered, but the channel still answers: carrying on');VWL.live=true;return true;}
+  VW.open=false;VWL.reopening=true;log('VW mode: the engine computer dropped the channel');
+  const tk=setInterval(()=>{expireStale();tick();},1000);   // the trip (GPS distance), timers and screen keep going meanwhile
   try{
     const off=()=>{log('VW mode: engine off. Waiting for the next start.');vwWait=true;lateProbe=0;poll();return false;};
     {const v=await readVoltage();if(v!=null&&v<13.5)return off();}
+    // A real drop with the engine running: count it, and keep the VW exchanges that led to it for the trip log.
+    VW.drops=(VW.drops||0)+1;(VW.dropLogs=VW.dropLogs||[]).push({at:Date.now(),lines:VW.log.slice(-300)});if(VW.dropLogs.length>5)VW.dropLogs.shift();
     log(`VW mode: before the drop, ${VW.ourTests||0} channel tests from us, ${VW.ecuTests||0} from the engine computer`);
+    await vClose();   // close our end cleanly, in case the ECU still holds it
     const t0=performance.now();
     const tryOpen=async n=>{if(await vOpen(n)){const s=await vreq([0x10,0x89]);if(s&&s[0]===0x50){log('VW mode: back after '+Math.round((performance.now()-t0)/1000)+' s');VWL.live=true;return true;}}await vClose();return false;};
-    if(gen===pollGen&&await tryOpen(1))return true;   // at once: worked once (21 Nov, group 65)
     if(gen!==pollGen)return false;
     log('VW mode: resetting the engine computer through the K-line, then reopening');
     await kLineReset(()=>gen===pollGen);
@@ -1714,20 +1749,23 @@ async function vwLost(gen){
     if(gen!==pollGen)return false;
     log('VW mode: could not get the channel back. Standard OBD for now, VW again in 90 s.');
     VWL.fellBack=true;VWL.fbAt=performance.now()-90000;initElm();return false;
-  }finally{VWL.reopening=false;}
+  }finally{clearInterval(tk);VWL.reopening=false;}
 }
 async function vwPoll(){loopsRunning++;try{
   const gen=++pollGen;VWL.live=true;VWL.used=true;obdLive=false;
-  let k=0,s=0,miss=0;
+  let k=0,s=0,miss=0,slow=false;
+  const lost=async()=>{const dead=VW.dead;VW.dead=false;miss=0;return vwLost(gen,dead);};
   while(connected&&!demo&&gen===pollGen){
     let g=VW_SEQ[k++%VW_SEQ.length];if(g==='S')g=VW_SLOW[s++%VW_SLOW.length];
     const t0=performance.now();
-    if(!(await vKeep())){if(gen!==pollGen)return;if(VW.dead||++miss>=2){VW.dead=false;miss=0;if(!(await vwLost(gen)))return;continue;}}
+    if(!(await vKeep(false,slow))){if(gen!==pollGen)return;if(VW.dead||++miss>=2){if(!(await lost()))return;continue;}}
     if(gen!==pollGen)return;
+    const tg=performance.now();
     if(g==='V')await readVoltage();
     else{const r=await vGroup(g);if(gen!==pollGen)return;
       if(r.raw){miss=0;vwApply(g,r.raw);}
-      else if(VW.dead||r.err==='no answer'){if(VW.dead||++miss>=2){VW.dead=false;miss=0;if(!(await vwLost(gen)))return;continue;}}}
+      else if(VW.dead||r.err==='no answer'){if(VW.dead||++miss>=2){if(!(await lost()))return;continue;}}}
+    slow=performance.now()-tg>300;   // a slow exchange: Bluetooth is having a moment, so the next channel test comes sooner
     reqMs=reqMs*0.9+(performance.now()-t0)*0.1;
     expireStale();tick();
     replies++;if(performance.now()-hzT>3000){chip('chipHz','VW · '+(replies*1000/(performance.now()-hzT)).toFixed(1)+'/s · '+Math.round(reqMs)+' ms','ok');$('chipHz').hidden=false;replies=0;hzT=performance.now();}
@@ -1836,7 +1874,13 @@ $('pickPortrait').onclick=()=>pickDrive('portrait');$('pickLandscape').onclick=(
 async function pickDrive(o){$('orientPick').hidden=true;store('golf-orient',o);await enterDrive();
   try{await screen.orientation.lock(o);}catch(e){log('Could not turn the screen: '+e.message);}}$('btnExitDrive').onclick=exitDrive;
 document.addEventListener('fullscreenchange',()=>{if(!document.fullscreenElement)exitDrive();});
-document.addEventListener('visibilitychange',()=>{if((connected||rec)&&document.visibilityState==='visible')keepAwake();});
+document.addEventListener('visibilitychange',()=>{if((connected||rec)&&document.visibilityState==='visible')keepAwake();
+  // Hidden (screen off, or another app in front), Chrome slows a page's timers down to about once a second, and VW mode
+  // can't acknowledge the engine computer's packets in time. Logged so a drop can be matched against it.
+  if(connected){const m=document.hidden?'app in the background (screen off or another app in front)':'app back in front';log(m[0].toUpperCase()+m.slice(1));vlog('('+m+')');}});
+// The phone holding the app back: a timer that should fire every 0.5 s and didn't for over 1.5 s.
+{let last=performance.now();setInterval(()=>{const now=performance.now(),gap=now-last;last=now;
+  if(gap>1500&&connected){const m=`the phone paused the app for ${(gap/1000).toFixed(1)} s`;log(m[0].toUpperCase()+m.slice(1));vlog('('+m+')');}},500);}
 window.addEventListener('pagehide',()=>{if(rec&&!rec.demo)flushChunk(rec);});
 // Check for a new version BEFORE touching Bluetooth: reloading while the adapter link is being opened
 // could take the whole app down (it closed itself on open, right after updates).
