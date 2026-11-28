@@ -289,7 +289,7 @@ body.drive-full .tile{min-height:0}
 </div>
 <div class="app">
   <header class="top">
-    <div class="brand"><span class="mark">Golfozaur <b>3000</b></span><small>1.9 TDI BLS · v5.4</small></div>
+    <div class="brand"><span class="mark">Golfozaur <b>3000</b></span><small>1.9 TDI BLS · v5.5</small></div>
     <div class="chips">
       <span class="chip rec" id="chipRec" hidden>REC</span>
       <span class="chip" id="chipSrc" hidden>VW</span>
@@ -308,7 +308,7 @@ body.drive-full .tile{min-height:0}
           <div>
             <div class="hero-state"><i></i><span id="hState">Offline</span></div>
             <div class="hero-title" id="hTitle">Car parked</div>
-            <div class="muted" id="hSub">Connect the adapter with the ignition on.</div>
+            <div class="muted" id="hSub">Connect the adapter with the key out, so the battery gets read at rest.</div>
           </div>
           <span class="chip" id="tripState">No trip</span>
         </div>
@@ -621,7 +621,7 @@ async function connect(){
   }catch(e){
     log('Connect failed: '+e.name+' '+e.message);
     if(e.name==='NotFoundError'){chip('chipBt','Adapter off');return;}
-    btProblem('<b>Couldn’t connect.</b> '+esc(e.message)+' Check the ignition is on and Car Scanner is fully closed, then try again.');
+    btProblem('<b>Couldn’t connect.</b> '+esc(e.message)+' Check the adapter is plugged in and Car Scanner is fully closed, then try again.');
     chip('chipBt','Error','bad');
   }
 }
@@ -643,7 +643,7 @@ async function openSerial(){
   chip('chipBt','Connecting…','warn');log('Opening classic Bluetooth serial…');
   try{await port.open({baudRate:38400});}
   catch(e){if(!/already open/i.test(e.message)){log('Serial open failed: '+e.message);chip('chipBt','No link','bad');
-    if(!autoMode)btProblem('<b>Couldn’t open the adapter.</b> Check the ignition is on and no other app is connected to it, then tap Connect again.');return;}}
+    if(!autoMode)btProblem('<b>Couldn’t open the adapter.</b> Check the adapter is plugged in and no other app is connected to it, then tap Connect again.');return;}}
   sClosing=false;sWriter=port.writable.getWriter();sReader=port.readable.getReader();
   connected=true;stale=0;readSerial();
   let r=await cmd('ATI',3000);
@@ -967,14 +967,14 @@ async function readDtc(){
     const pr=recall('golf-proto')||'0';
     for(const c of ['ATWS','ATE0','ATL0','ATS0','ATH0','ATAT2','ATSP'+pr])await cmd(c,c==='ATWS'?3000:1500);
     const f=await cmd('0100',8000);log('0100 → '+clean(f));
-    if(payload(f,'41','00'))await readDtcObd();else $('dtcOut').textContent='No answer from the ECU over OBD. Try with the ignition on.';
+    if(payload(f,'41','00'))await readDtcObd();else $('dtcOut').textContent='No answer from the ECU over OBD. Turn the key halfway (ignition on) and try again.';
     await cmd('ATPC',1500);obdLive=false;await sleep(5500);
     if(connected)initElm();return;}
   return readDtcObd();}
 async function readDtcObd(){
   $('dtcOut').textContent='Reading…';
   const r3=await cmd('03',5000);log('03 → '+clean(r3));const r7=await cmd('07',5000);log('07 → '+clean(r7));
-  if(r3==null){$('dtcOut').textContent='No answer from the ECU. Try with the ignition on.';return;}
+  if(r3==null){$('dtcOut').textContent='No answer from the ECU. Turn the key halfway (ignition on) and try again.';return;}
   const stored=parseDtc(r3,'43'),pend=parseDtc(r7,'47');
   $('dtcOut').innerHTML=(stored.length?'Stored: '+stored.map(c=>`<span class="dtc">${c}</span>`).join(', '):'<span style="color:var(--ok)">No stored engine codes.</span>')+
     '<br>'+(pend.length?'Pending: '+pend.map(c=>`<span class="dtc">${c}</span>`).join(', '):'<span class="muted">No pending codes.</span>')+
@@ -1351,10 +1351,11 @@ async function renderHome(){
   let st='off',sl='Offline';
   if(demo){t.textContent='Demo';sub.textContent='Invented values, not your car.';}
   else if(connected&&live.rpm>300){st='run';sl=VWL.live?'Live · VW direct':'Live · standard OBD';t.textContent='Engine running';sub.textContent='Tap Drive mode once the phone is on its stand.';}
-  else if(connected){st='conn';sl='Adapter connected';t.textContent=vwWait?'Waiting for the engine':'Connected';sub.textContent=vwWait?'Start the engine: the app notices it from the battery and opens VW mode.':'Ignition on, engine off.';}
+  // The routine (28 Nov): connect with the key out (battery at rest), key halfway (cluster, 12 V system, glow plugs), then start.
+  else if(connected){st='conn';sl='Adapter connected';t.textContent=vwWait?'Waiting for the engine':'Connected';sub.textContent=vwWait?'Reading the battery at rest. Then key halfway for the glow plugs, and start: VW mode opens by itself.':'Engine off. Key halfway for the glow plugs, then start.';}
   else if(parkedSince){sl='Adapter resting';t.textContent='Car parked';sub.textContent='The adapter is resting. It reconnects when you start the engine.';}
-  else if(wantConnected){st='look';sl='Searching';t.textContent='Looking for the car…';sub.textContent='Turn the ignition on.';}
-  else{t.textContent='Car parked';sub.textContent=recall('golf-transport')==='serial'||transport==='serial'?'Opens the connection by itself when you start the engine with the app open.':'Tap Connect adapter with the ignition on.';}
+  else if(wantConnected){st='look';sl='Searching';t.textContent='Looking for the adapter…';sub.textContent='Keep the key out: the adapter works without it, and the battery gets read at rest.';}
+  else{t.textContent='Car parked';sub.textContent=recall('golf-transport')==='serial'||transport==='serial'?'Connects by itself when you open the app (or tap Connect adapter). Keep the key out until it has.':'Tap Connect adapter with the key still out.';}
   $('hLive').classList.toggle('off',!(connected||demo));$('hero').dataset.state=st;$('hState').textContent=sl;
   const trips=(await getAll('trips')).filter(x=>!x.demo).sort((a,b)=>b.start-a.start);
   // health
