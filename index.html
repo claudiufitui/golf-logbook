@@ -42,7 +42,9 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
 .brand .mark{font-family:var(--display);font-weight:700;font-size:23px;letter-spacing:.06em;text-transform:uppercase;line-height:1}
 .brand .mark b{color:var(--accent);font-weight:700}
 .brand small{font-family:var(--mono);font-size:10.5px;color:var(--dim);letter-spacing:.02em}
-.chips{display:flex;gap:6px;flex-wrap:wrap;min-width:0}
+/* 28 Nov: the chips stay on one line (scrolling sideways if they must), so the page doesn't jump down when the VW and rate chips appear */
+.chips{display:flex;gap:6px;flex-wrap:nowrap;min-width:0;max-width:100%;overflow-x:auto;scrollbar-width:none}
+.chips::-webkit-scrollbar{display:none}
 .chip{font-family:var(--mono);font-size:11px;line-height:1;padding:6px 9px;border-radius:999px;background:var(--panel2);color:var(--muted);white-space:nowrap;display:inline-flex;align-items:center;gap:6px;border:0}
 .chip::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--dim);flex:none}
 .chip.ok{color:var(--fg)}.chip.ok::before{background:var(--ok);box-shadow:0 0 6px var(--ok)}
@@ -100,8 +102,8 @@ label.check input{width:20px;height:20px;accent-color:var(--accent)}
 .hero[data-state=run] .hero-state i{background:var(--ok);box-shadow:0 0 8px var(--ok)}
 .hero[data-state=conn] .hero-state i{background:var(--cool)}
 .hero[data-state=look] .hero-state i{background:var(--warn);animation:blink 1.4s infinite}
-.hero-title{font-family:var(--display);font-weight:700;font-size:34px;line-height:1;letter-spacing:.005em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-#hSub{line-height:1.4;min-height:2.8em;margin-top:6px;font-size:13.5px}
+.hero-title{font-family:var(--display);font-weight:700;font-size:clamp(28px,8.5vw,34px);line-height:1;letter-spacing:.005em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#hSub{line-height:1.4;min-height:4.2em;margin-top:6px;font-size:13.5px}   /* room for three lines, so a longer line never pushes the page down */
 .livebar{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:var(--hair);border-radius:14px;overflow:hidden;border:1px solid var(--hair);transition:opacity .3s}
 .livebar.off{opacity:.45}
 .livebar>div{background:var(--bg);padding:12px 10px 10px;display:flex;flex-direction:column;min-width:0}
@@ -289,7 +291,7 @@ body.drive-full .tile{min-height:0}
 </div>
 <div class="app">
   <header class="top">
-    <div class="brand"><span class="mark">Golfozaur <b>3000</b></span><small>1.9 TDI BLS · v5.6</small></div>
+    <div class="brand"><span class="mark">Golfozaur <b>3000</b></span><small>1.9 TDI BLS · v5.7</small></div>
     <div class="chips">
       <span class="chip rec" id="chipRec" hidden>REC</span>
       <span class="chip" id="chipSrc" hidden>VW</span>
@@ -1363,12 +1365,14 @@ async function renderHome(){
   const t=$('hTitle'),sub=$('hSub');
   let st='off',sl='Offline';
   if(demo){t.textContent='Demo';sub.textContent='Invented values, not your car.';}
-  else if(connected&&live.rpm>300){st='run';sl=VWL.live?'Live · VW direct':'Live · standard OBD';t.textContent='Engine running';sub.textContent='Tap Drive mode once the phone is on its stand.';}
+  // 28 Nov: titles short enough for one line on a narrow phone, every line under it at most two lines, and one text for the
+  // whole connected-but-not-running stretch (the adapter set-up and VW mode's wait used to flash two different ones).
+  else if(connected&&live.rpm>300){st='run';sl=VWL.live?'Live · VW direct':'Live · standard OBD';t.textContent='Engine on';sub.textContent='Tap Drive mode once the phone is on its stand.';}
   // The routine (28 Nov): connect with the key out (battery at rest), key halfway (cluster, 12 V system, glow plugs), then start.
-  else if(connected){st='conn';sl='Adapter connected';t.textContent=vwWait?'Waiting for the engine':'Connected';sub.textContent=vwWait?'Reading the battery at rest. Then key halfway for the glow plugs, and start: VW mode opens by itself.':'Engine off. Key halfway for the glow plugs, then start.';}
+  else if(connected){st='conn';sl='Adapter connected';t.textContent='Ready';sub.textContent='Reading the battery at rest. Then key halfway for the glow plugs, and start.';}
   else if(parkedSince){sl='Adapter resting';t.textContent='Car parked';sub.textContent='The adapter is resting. It reconnects when you start the engine.';}
-  else if(wantConnected){st='look';sl='Searching';t.textContent='Looking for the adapter…';sub.textContent='Keep the key out: the adapter works without it, and the battery gets read at rest.';}
-  else{t.textContent='Car parked';sub.textContent=recall('golf-transport')==='serial'||transport==='serial'?'Connects by itself when you open the app (or tap Connect adapter). Keep the key out until it has.':'Tap Connect adapter with the key still out.';}
+  else if(wantConnected){st='look';sl='Searching';t.textContent='Searching…';sub.textContent='The adapter works with the key out. Keep it out, so the battery is read at rest.';}
+  else{t.textContent='Car parked';sub.textContent=recall('golf-transport')==='serial'||transport==='serial'?'Connects by itself when you open the app. Keep the key out until it has.':'Tap Connect adapter with the key still out.';}
   $('hLive').classList.toggle('off',!(connected||demo));$('hero').dataset.state=st;$('hState').textContent=sl;
   const trips=(await getAll('trips')).filter(x=>!x.demo).sort((a,b)=>b.start-a.start);
   // health
@@ -1788,7 +1792,7 @@ async function vwPoll(){loopsRunning++;try{
     slow=performance.now()-tg>300;   // a slow exchange: Bluetooth is having a moment, so the next channel test comes sooner
     reqMs=reqMs*0.9+(performance.now()-t0)*0.1;
     expireStale();tick();
-    replies++;if(performance.now()-hzT>3000){chip('chipHz','VW · '+(replies*1000/(performance.now()-hzT)).toFixed(1)+'/s · '+Math.round(reqMs)+' ms','ok');$('chipHz').hidden=false;replies=0;hzT=performance.now();}
+    replies++;if(performance.now()-hzT>3000){chip('chipHz',(replies*1000/(performance.now()-hzT)).toFixed(1)+'/s · '+Math.round(reqMs)+' ms','ok');$('chipHz').hidden=false;replies=0;hzT=performance.now();}
   }
   if(gen===pollGen)VWL.live=false;
 }finally{loopsRunning--;}}
