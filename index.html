@@ -289,7 +289,7 @@ body.drive-full .tile{min-height:0}
 </div>
 <div class="app">
   <header class="top">
-    <div class="brand"><span class="mark">Golfozaur <b>3000</b></span><small>1.9 TDI BLS · v5.5</small></div>
+    <div class="brand"><span class="mark">Golfozaur <b>3000</b></span><small>1.9 TDI BLS · v5.6</small></div>
     <div class="chips">
       <span class="chip rec" id="chipRec" hidden>REC</span>
       <span class="chip" id="chipSrc" hidden>VW</span>
@@ -874,9 +874,22 @@ function noteStart(){
   // 21 Nov: the lowest reading is the split-second jolt when the starter engages (6.9 V tonight). Battery tests judge the
   // steady voltage while the engine turns over, so that's kept too: the middle of the readings during cranking.
   const ck=crank.filter(x=>x.v<restV-1.5).map(x=>x.v).sort((a,b)=>a-b);const crankMed=ck.length>=3?ck[Math.floor(ck.length/2)]:null;
-  pendingStart={at:now,restV,crankV,crankMed,keyS:keyOn?Math.round((now-keyOn.t)/1000):null,n:vbuf.length};
-  log(`Start: battery ${restV} V at rest, ${crankMed??'?'} V while cranking, ${crankV} V lowest (starter jolt)`);
-  try{const h=JSON.parse(recall('golf-batt')||'[]');h.push(pendingStart);store('golf-batt',JSON.stringify(h.slice(-60)));}catch(e){}
+  // 28 Nov: the routine is key out (battery at rest), key halfway (cluster, fuel pump, the glow plugs when cold), then the
+  // starter. The two phases are told apart by depth: the glow plugs pull the battery down by about a volt, the starter by 2-5 V.
+  // halfS/halfV: how long the key sat halfway before the starter, and the battery meanwhile (middle reading).
+  // crankS: from the starter's first pull until the battery is back at its resting voltage (the engine has caught).
+  const cs=vbuf.find(x=>x.v<restV-1.5&&(!keyOn||x.t>=keyOn.t));
+  const mid=a=>{const s=a.slice().sort((p,q)=>p-q);return s.length?s[Math.floor(s.length/2)]:null;};
+  let halfS=null,halfV=null,crankS=null;
+  if(keyOn&&cs&&cs.t-keyOn.t>=300){halfS=Math.round((cs.t-keyOn.t)/100)/10;halfV=mid(vbuf.filter(x=>x.t>=keyOn.t&&x.t<cs.t).map(x=>x.v));}
+  if(cs){const back=vbuf.find(x=>x.t>cs.t&&x.v>=restV);if(back)crankS=Math.round((back.t-cs.t)/100)/10;}
+  // The whole curve goes with the trip, as [ms before this moment, volts]: every reading from 3 s before the key turned
+  // (or the last 30 s), two a second before that, so a long wait with the key out doesn't fill the trip file.
+  const from=keyOn?keyOn.t-3000:now-30000;let lastT=-1e9;const curve=[];
+  for(const x of vbuf){if(x.t<from){if(x.t-lastT<500)continue;lastT=x.t;}curve.push([x.t-now,x.v]);}
+  pendingStart={at:now,restV,crankV,crankMed,keyS:keyOn?Math.round((now-keyOn.t)/1000):null,halfS,halfV,crankS,n:vbuf.length,curve};
+  log(`Start: battery ${restV} V at rest, `+(halfS!=null?`key halfway ${halfV} V for ${halfS} s, `:'')+`${crankMed??'?'} V while cranking${crankS!=null?` (${crankS} s)`:''}, ${crankV} V lowest (starter jolt)`);
+  try{const h=JSON.parse(recall('golf-batt')||'[]');h.push({...pendingStart,curve:undefined});store('golf-batt',JSON.stringify(h.slice(-60)));}catch(e){}
   vbuf=[];
 }
 let replies=0,hzT=performance.now(),reqMs=0,pollGen=0,offSince=null,waitStart=false;
@@ -1734,7 +1747,13 @@ async function vwLost(gen,dead){
   const tk=setInterval(()=>{expireStale();tick();},1000);   // the trip (GPS distance), timers and screen keep going meanwhile
   try{
     const off=()=>{log('VW mode: engine off. Waiting for the next start.');vwWait=true;lateProbe=0;poll();return false;};
-    {const v=await readVoltage();if(v!=null&&v<13.5)return off();}
+    // 28 Nov: switching off, the ECU closed the channel a moment after the trip had paused. The single battery reading wasn't
+    // under 13.5 V (still settling from the alternator's 14.4 V, or no answer), so it went down as a drop. Now: no trip running
+    // means the engine had already stopped; otherwise the battery decides, read up to three times over ~1.5 s.
+    const engineOff=async()=>{if(!rec)return true;let read=false;
+      for(let i=0;i<3;i++){const v=await readVoltage();if(v!=null){read=true;if(v<13.5)return true;}if(i<2)await sleep(700);}
+      return !read&&Date.now()-lastRunAt>8000;};
+    if(await engineOff())return off();
     // A real drop with the engine running: count it, and keep the VW exchanges that led to it for the trip log.
     VW.drops=(VW.drops||0)+1;(VW.dropLogs=VW.dropLogs||[]).push({at:Date.now(),lines:VW.log.slice(-300)});if(VW.dropLogs.length>5)VW.dropLogs.shift();
     log(`VW mode: before the drop, ${VW.ourTests||0} channel tests from us, ${VW.ecuTests||0} from the engine computer`);
@@ -1745,7 +1764,7 @@ async function vwLost(gen,dead){
     log('VW mode: resetting the engine computer through the K-line, then reopening');
     await kLineReset(()=>gen===pollGen);
     if(gen!==pollGen)return false;
-    {const v=await readVoltage();if(v!=null&&v<13.5)return off();}
+    if(await engineOff())return off();
     if(await tryOpen(2))return true;
     if(gen!==pollGen)return false;
     log('VW mode: could not get the channel back. Standard OBD for now, VW again in 90 s.');
